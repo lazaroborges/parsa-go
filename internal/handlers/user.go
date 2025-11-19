@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"parsa/internal/database"
+	"parsa/internal/middleware"
 )
 
 type UserHandler struct {
@@ -23,7 +24,7 @@ func (h *UserHandler) HandleGetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user ID from context (set by auth middleware)
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return

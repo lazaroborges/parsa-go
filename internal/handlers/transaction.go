@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"parsa/internal/database"
+	"parsa/internal/middleware"
 	"parsa/internal/models"
 )
 
@@ -38,7 +39,7 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -95,7 +96,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -163,7 +164,7 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -204,7 +205,7 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
