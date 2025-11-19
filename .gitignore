@@ -5,6 +5,7 @@ bin/
 *.so
 *.dylib
 parsa
+CLAUDE.md
 
 # Environment files
 .env

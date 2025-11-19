@@ -42,6 +42,7 @@ type JWTConfig struct {
 }
 
 func Load() (*Config, error) {
+
 	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid DB_PORT: %w", err)
@@ -55,9 +56,9 @@ func Load() (*Config, error) {
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     dbPort,
-			User:     getEnv("DB_USER", "postgres"),
+			User:     getEnv("DB_USER", "lazaro"),
 			Password: getEnv("DB_PASSWORD", ""),
-			DBName:   getEnv("DB_NAME", "parsa"),
+			DBName:   getEnv("DB_NAME", "parsa-go"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		OAuth: OAuthConfig{
