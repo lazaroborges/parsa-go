@@ -1,6 +1,6 @@
 # Parsa - Personal Finance Management API
 
-A clean, production-ready RESTful API for personal finance management built with Go and PostgreSQL.
+A production-ready RESTful API for personal finance management built with Go and PostgreSQL. To go with Parsa-Go in Flutter.
 
 ## Features
 
