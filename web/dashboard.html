@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsa - Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            background: #f0f0f0;
+            padding: 20px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .welcome {
+            background: #f9f9f9;
+            padding: 40px;
+            border: 1px solid #ddd;
+        }
+
+        .welcome h2 {
+            margin-bottom: 15px;
+        }
+
+        .welcome p {
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>Parsa</h1>
+            <div class="user-info">
+                <span id="userName"></span>
+                <button onclick="handleLogout()">Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="welcome">
+            <h2>Welcome to Parsa</h2>
+            <p>Your personal finance management dashboard.</p>
+            <p style="color: #666;">This is a placeholder page. The full dashboard will be implemented with the Flutter frontend.</p>
+        </div>
+
+        <div class="welcome" style="margin-top: 20px;">
+            <h3>JWT Token</h3>
+            <p style="word-break: break-all; font-family: monospace; font-size: 12px; background: #fff; padding: 15px; border: 1px solid #ddd;" id="jwtToken"></p>
+            <button onclick="copyToken()" style="margin-top: 10px;">Copy Token</button>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token) {
+            window.location.href = '/login';
+        } else {
+            document.getElementById('userName').textContent = user.name || user.email;
+            document.getElementById('jwtToken').textContent = token;
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+
+        function copyToken() {
+            navigator.clipboard.writeText(token).then(() => {
+                alert('Token copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy token:', err);
+            });
+        }
+    </script>
+</body>
+</html>

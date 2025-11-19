@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticating...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .loading {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <h2>Authenticating with Google...</h2>
+        <p>Please wait while we complete your login.</p>
+    </div>
+
+    <script>
+        // Extract token and user data from URL hash
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const token = params.get('token');
+        const userData = params.get('user');
+
+        if (token && userData) {
+            try {
+                const user = JSON.parse(decodeURIComponent(userData));
+                localStorage.setItem('token', token);
+                localStorage.setItem('user', JSON.stringify(user));
+                window.location.href = '/dashboard';
+            } catch (error) {
+                console.error('Error parsing user data:', error);
+                window.location.href = '/login?error=oauth_failed';
+            }
+        } else {
+            window.location.href = '/login?error=oauth_failed';
+        }
+    </script>
+</body>
+</html>

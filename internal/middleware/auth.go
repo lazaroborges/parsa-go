@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,8 @@ func Auth(jwt *auth.JWT) func(http.Handler) http.Handler {
 				http.Error(w, "Authorization header required", http.StatusUnauthorized)
 				return
 			}
+
+			fmt.Println("authHeader", authHeader)
 
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || parts[0] != "Bearer" {

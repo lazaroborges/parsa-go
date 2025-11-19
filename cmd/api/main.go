@@ -60,19 +60,27 @@ func run() error {
 	// Create router
 	mux := http.NewServeMux()
 
-	// Public routes
-	mux.HandleFunc("/auth/google/url", authHandler.HandleAuthURL)
-	mux.HandleFunc("/auth/google/callback", authHandler.HandleCallback)
+	// Serve pages
+	mux.HandleFunc("/", handleLoginPage)
+	mux.HandleFunc("/login", handleLoginPage)
+	mux.HandleFunc("/dashboard", handleDashboard)
+	mux.HandleFunc("/oauth-callback", handleOAuthCallback)
+
+	// Public API routes
+	mux.HandleFunc("/api/auth/register", authHandler.HandleRegister)
+	mux.HandleFunc("/api/auth/login", authHandler.HandleLogin)
+	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
+	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
 	mux.HandleFunc("/health", handleHealth)
 
 	// Protected routes - wrap with auth middleware
 	authMiddleware := middleware.Auth(jwt)
 
-	mux.Handle("/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
-	mux.Handle("/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
-	mux.Handle("/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
-	mux.Handle("/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
-	mux.Handle("/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
+	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
+	mux.Handle("/api/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
+	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
+	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
+	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware
 	handler := middleware.Logging(middleware.CORS(mux))
@@ -117,4 +125,16 @@ func run() error {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/login.html")
+}
+
+func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/dashboard.html")
+}
+
+func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/oauth-callback.html")
 }

@@ -6,6 +6,9 @@ export
 run:
 	go run cmd/api/main.go
 
+dev:
+	air
+
 # Build the application
 build:
 	go build -o bin/parsa cmd/api/main.go

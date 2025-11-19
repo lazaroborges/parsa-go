@@ -18,18 +18,18 @@ func NewUserRepository(db *DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, params models.CreateUserParams) (*models.User, error) {
 	query := `
-		INSERT INTO users (email, name, oauth_provider, oauth_id)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, email, name, oauth_provider, oauth_id, created_at, updated_at
+		INSERT INTO users (email, name, oauth_provider, oauth_id, password_hash)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
 	`
 
 	var user models.User
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.Email, params.Name, params.OAuthProvider, params.OAuthID,
+		params.Email, params.Name, params.OAuthProvider, params.OAuthID, params.PasswordHash,
 	).Scan(
 		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -42,7 +42,7 @@ func (r *UserRepository) Create(ctx context.Context, params models.CreateUserPar
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, created_at, updated_at
+		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -50,7 +50,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -66,7 +66,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, created_at, updated_at
+		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -74,7 +74,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -90,7 +90,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 
 func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, created_at, updated_at
+		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
 		FROM users
 		WHERE oauth_provider = $1 AND oauth_id = $2
 	`
@@ -98,7 +98,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, provider, oauthID).Scan(
 		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
