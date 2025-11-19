@@ -99,7 +99,7 @@ sudo mv migrate /usr/local/bin/
 Run migrations:
 
 ```bash
-migrate -path migrations -database "postgres://postgres:yourpassword@localhost:5432/parsa?sslmode=disable" up
+migrate -path migrations -database "postgres://$DB_USER:$DB_PASSWORD$@localhost:5432/parsa?sslmode=disable" up
 ```
 
 ### 5. Run the Server

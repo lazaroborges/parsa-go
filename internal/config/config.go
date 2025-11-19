@@ -47,7 +47,6 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid DB_PORT: %w", err)
 	}
-
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnv("PORT", "8080"),
