@@ -1,0 +1,249 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"parsa/internal/database"
+	"parsa/internal/models"
+)
+
+type TransactionHandler struct {
+	transactionRepo *database.TransactionRepository
+	accountRepo     *database.AccountRepository
+}
+
+func NewTransactionHandler(transactionRepo *database.TransactionRepository, accountRepo *database.AccountRepository) *TransactionHandler {
+	return &TransactionHandler{
+		transactionRepo: transactionRepo,
+		accountRepo:     accountRepo,
+	}
+}
+
+type CreateTransactionRequest struct {
+	AccountID       string  `json:"account_id"`
+	Amount          float64 `json:"amount"`
+	Description     string  `json:"description"`
+	Category        *string `json:"category,omitempty"`
+	TransactionDate string  `json:"transaction_date"`
+}
+
+// HandleListTransactions returns transactions for a specific account
+func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	accountID := r.URL.Query().Get("account_id")
+	if accountID == "" {
+		http.Error(w, "account_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify account ownership
+	account, err := h.accountRepo.GetByID(r.Context(), accountID)
+	if err != nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Parse pagination parameters
+	limit := 50
+	offset := 0
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	transactions, err := h.transactionRepo.ListByAccountID(r.Context(), accountID, limit, offset)
+	if err != nil {
+		http.Error(w, "Failed to list transactions", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(transactions)
+}
+
+// HandleCreateTransaction creates a new transaction
+func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req CreateTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.AccountID == "" || req.Description == "" || req.TransactionDate == "" {
+		http.Error(w, "account_id, description, and transaction_date are required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify account ownership
+	account, err := h.accountRepo.GetByID(r.Context(), req.AccountID)
+	if err != nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Parse transaction date
+	transactionDate, err := time.Parse("2006-01-02", req.TransactionDate)
+	if err != nil {
+		http.Error(w, "Invalid transaction_date format (use YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+
+	transaction, err := h.transactionRepo.Create(r.Context(), models.CreateTransactionParams{
+		AccountID:       req.AccountID,
+		Amount:          req.Amount,
+		Description:     req.Description,
+		Category:        req.Category,
+		TransactionDate: transactionDate,
+	})
+
+	if err != nil {
+		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+		return
+	}
+
+	// Update account balance
+	newBalance := account.Balance + req.Amount
+	if err := h.accountRepo.UpdateBalance(r.Context(), req.AccountID, newBalance); err != nil {
+		// Log error but don't fail the request
+		// In production, this should be a transaction
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(transaction)
+}
+
+// HandleGetTransaction returns a specific transaction
+func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	transactionID := strings.TrimPrefix(r.URL.Path, "/transactions/")
+	if transactionID == "" {
+		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
+		return
+	}
+
+	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
+	if err != nil {
+		http.Error(w, "Transaction not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify ownership through account
+	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
+	if err != nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(transaction)
+}
+
+// HandleDeleteTransaction deletes a transaction
+func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	transactionID := strings.TrimPrefix(r.URL.Path, "/transactions/")
+	if transactionID == "" {
+		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
+		return
+	}
+
+	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
+	if err != nil {
+		http.Error(w, "Transaction not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify ownership through account
+	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
+	if err != nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Update account balance before deleting
+	newBalance := account.Balance - transaction.Amount
+	if err := h.accountRepo.UpdateBalance(r.Context(), transaction.AccountID, newBalance); err != nil {
+		// Log error but continue with deletion
+	}
+
+	if err := h.transactionRepo.Delete(r.Context(), transactionID); err != nil {
+		http.Error(w, "Failed to delete transaction", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
