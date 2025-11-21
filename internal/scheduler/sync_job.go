@@ -8,18 +8,18 @@ import (
 	"parsa/internal/models"
 )
 
-// PierreFinanceClient defines the interface for interacting with Pierre Finance API.
+// OpenFinanceFinanceClient defines the interface for interacting with OpenFinance Finance API.
 // This is a placeholder for the actual API client implementation.
-// Reference: https://docs.pierre.finance/api-reference/introduction
-type PierreFinanceClient interface {
-	// FetchAccounts retrieves all accounts for a user from Pierre Finance API
+// Reference: https://docs.openFinance.finance/api-reference/introduction
+type OpenFinanceFinanceClient interface {
+	// FetchAccounts retrieves all accounts for a user from OpenFinance Finance API
 	FetchAccounts(ctx context.Context, userID string) ([]Account, error)
 
-	// FetchTransactions retrieves all transactions for a user from Pierre Finance API
+	// FetchTransactions retrieves all transactions for a user from OpenFinance Finance API
 	FetchTransactions(ctx context.Context, userID string) ([]Transaction, error)
 }
 
-// Account represents an account from Pierre Finance API.
+// Account represents an account from OpenFinance Finance API.
 // This is a placeholder - actual structure will be defined when implementing the API client.
 type Account struct {
 	ID       string
@@ -29,7 +29,7 @@ type Account struct {
 	Currency string
 }
 
-// Transaction represents a transaction from Pierre Finance API.
+// Transaction represents a transaction from OpenFinance Finance API.
 // This is a placeholder - actual structure will be defined when implementing the API client.
 type Transaction struct {
 	ID          string
@@ -40,15 +40,15 @@ type Transaction struct {
 	Category    string
 }
 
-// SyncJob represents a job that syncs data from Pierre Finance API for a specific user.
+// SyncJob represents a job that syncs data from OpenFinance Finance API for a specific user.
 // It implements the Job interface.
 type SyncJob struct {
 	user   *models.User
-	client PierreFinanceClient
+	client OpenFinanceFinanceClient
 }
 
 // NewSyncJob creates a new sync job for the given user.
-func NewSyncJob(user *models.User, client PierreFinanceClient) *SyncJob {
+func NewSyncJob(user *models.User, client OpenFinanceFinanceClient) *SyncJob {
 	return &SyncJob{
 		user:   user,
 		client: client,
@@ -56,20 +56,20 @@ func NewSyncJob(user *models.User, client PierreFinanceClient) *SyncJob {
 }
 
 // Execute runs the sync job.
-// It fetches accounts and transactions from Pierre Finance API and stores them in the database.
+// It fetches accounts and transactions from OpenFinance Finance API and stores them in the database.
 // This is a placeholder implementation - actual API calls and database updates will be added later.
 func (j *SyncJob) Execute(ctx context.Context) error {
 	log.Printf("Starting sync for user %s (%s)", j.user.ID, j.user.Email)
 
-	// TODO: Implement actual Pierre Finance API client
+	// TODO: Implement actual OpenFinance Finance API client
 	// For now, this is a placeholder that demonstrates the structure
 
-	// Step 1: Fetch accounts from Pierre Finance
+	// Step 1: Fetch accounts from OpenFinance Finance
 	if err := j.syncAccounts(ctx); err != nil {
 		return fmt.Errorf("failed to sync accounts: %w", err)
 	}
 
-	// Step 2: Fetch transactions from Pierre Finance
+	// Step 2: Fetch transactions from OpenFinance Finance
 	if err := j.syncTransactions(ctx); err != nil {
 		return fmt.Errorf("failed to sync transactions: %w", err)
 	}
@@ -78,10 +78,10 @@ func (j *SyncJob) Execute(ctx context.Context) error {
 	return nil
 }
 
-// syncAccounts fetches and stores accounts from Pierre Finance API.
+// syncAccounts fetches and stores accounts from OpenFinance Finance API.
 func (j *SyncJob) syncAccounts(ctx context.Context) error {
 	// Placeholder implementation
-	// When Pierre Finance API client is implemented, this will:
+	// When OpenFinance Finance API client is implemented, this will:
 	// 1. Call client.FetchAccounts(ctx, j.user.ID)
 	// 2. Compare with existing accounts in database
 	// 3. Create/update accounts as needed
@@ -102,10 +102,10 @@ func (j *SyncJob) syncAccounts(ctx context.Context) error {
 	return nil
 }
 
-// syncTransactions fetches and stores transactions from Pierre Finance API.
+// syncTransactions fetches and stores transactions from OpenFinance Finance API.
 func (j *SyncJob) syncTransactions(ctx context.Context) error {
 	// Placeholder implementation
-	// When Pierre Finance API client is implemented, this will:
+	// When OpenFinance Finance API client is implemented, this will:
 	// 1. Call client.FetchTransactions(ctx, j.user.ID)
 	// 2. Compare with existing transactions in database
 	// 3. Create new transactions (avoid duplicates)
@@ -135,5 +135,5 @@ func (j *SyncJob) UserID() string {
 
 // Description returns a human-readable description of this job.
 func (j *SyncJob) Description() string {
-	return "Pierre Finance sync"
+	return "OpenFinance Finance sync"
 }

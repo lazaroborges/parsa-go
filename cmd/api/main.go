@@ -70,11 +70,11 @@ func run() error {
 			RunOnStartup:  cfg.Scheduler.RunOnStartup,
 		}
 
-		// Create Pierre Finance client (placeholder for now)
-		var pierreClient scheduler.PierreFinanceClient = nil
+		// Create OpenFinance Finance client (placeholder for now)
+		var openFinanceClient scheduler.OpenFinanceFinanceClient = nil
 
 		var err error
-		sched, err = scheduler.NewScheduler(userRepo, pierreClient, schedulerConfig)
+		sched, err = scheduler.NewScheduler(userRepo, openFinanceClient, schedulerConfig)
 		if err != nil {
 			return err
 		}
