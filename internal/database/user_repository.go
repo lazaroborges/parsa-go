@@ -111,3 +111,37 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 
 	return &user, nil
 }
+
+func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
+	query := `
+		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var user models.User
+		err := rows.Scan(
+			&user.ID, &user.Email, &user.Name,
+			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+			&user.CreatedAt, &user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, &user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating users: %w", err)
+	}
+
+	return users, nil
+}

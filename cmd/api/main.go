@@ -14,6 +14,7 @@ import (
 	"parsa/internal/database"
 	"parsa/internal/handlers"
 	"parsa/internal/middleware"
+	"parsa/internal/scheduler"
 )
 
 func main() {
@@ -56,6 +57,34 @@ func run() error {
 	userHandler := handlers.NewUserHandler(userRepo)
 	accountHandler := handlers.NewAccountHandler(accountRepo)
 	transactionHandler := handlers.NewTransactionHandler(transactionRepo, accountRepo)
+
+	// Initialize scheduler (if enabled)
+	var sched *scheduler.Scheduler
+	if cfg.Scheduler.Enabled {
+		log.Println("Initializing scheduler...")
+		schedulerConfig := scheduler.SchedulerConfig{
+			ScheduleTimes: cfg.Scheduler.ScheduleTimes,
+			WorkerCount:   cfg.Scheduler.WorkerCount,
+			JobDelay:      cfg.Scheduler.JobDelay,
+			QueueSize:     cfg.Scheduler.QueueSize,
+			RunOnStartup:  cfg.Scheduler.RunOnStartup,
+		}
+
+		// Create Pierre Finance client (placeholder for now)
+		var pierreClient scheduler.PierreFinanceClient = nil
+
+		var err error
+		sched, err = scheduler.NewScheduler(userRepo, pierreClient, schedulerConfig)
+		if err != nil {
+			return err
+		}
+
+		// Start scheduler in background
+		sched.Start()
+		log.Printf("Scheduler started with times: %v", cfg.Scheduler.ScheduleTimes)
+	} else {
+		log.Println("Scheduler is disabled")
+	}
 
 	// Create router
 	mux := http.NewServeMux()
@@ -114,8 +143,15 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
-		return err
+		log.Printf("Error shutting down HTTP server: %v", err)
+	}
+
+	// Shutdown scheduler if it was started
+	if sched != nil {
+		log.Println("Shutting down scheduler...")
+		sched.Shutdown(30 * time.Second)
 	}
 
 	log.Println("Server stopped")
