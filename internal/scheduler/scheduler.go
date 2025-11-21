@@ -42,11 +42,11 @@ func ParseScheduleTime(s string) (ScheduleTime, error) {
 // Scheduler manages periodic execution of sync jobs at specific times.
 // It demonstrates Go's concurrency with Ticker, select, context, and channels.
 type Scheduler struct {
-	userRepo      *database.UserRepository
-	pierreClient  PierreFinanceClient
-	workerPool    *WorkerPool
-	scheduleTimes []ScheduleTime
-	runOnStartup  bool
+	userRepo          *database.UserRepository
+	openFinanceClient OpenFinanceFinanceClient
+	workerPool        *WorkerPool
+	scheduleTimes     []ScheduleTime
+	runOnStartup      bool
 
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -67,7 +67,7 @@ type SchedulerConfig struct {
 // NewScheduler creates a new scheduler with the given configuration.
 func NewScheduler(
 	userRepo *database.UserRepository,
-	pierreClient PierreFinanceClient,
+	openFinanceClient OpenFinanceFinanceClient,
 	config SchedulerConfig,
 ) (*Scheduler, error) {
 	// Parse schedule times
@@ -94,13 +94,13 @@ func NewScheduler(
 	log.Printf("Worker pool: %d workers, %v delay between jobs", config.WorkerCount, config.JobDelay)
 
 	return &Scheduler{
-		userRepo:      userRepo,
-		pierreClient:  pierreClient,
-		workerPool:    workerPool,
-		scheduleTimes: scheduleTimes,
-		runOnStartup:  config.RunOnStartup,
-		ctx:           ctx,
-		cancel:        cancel,
+		userRepo:          userRepo,
+		openFinanceClient: openFinanceClient,
+		workerPool:        workerPool,
+		scheduleTimes:     scheduleTimes,
+		runOnStartup:      config.RunOnStartup,
+		ctx:               ctx,
+		cancel:            cancel,
 	}, nil
 }
 
@@ -209,7 +209,7 @@ func (s *Scheduler) runSync() {
 	// Create sync jobs for each user
 	jobs := make([]Job, 0, len(users))
 	for _, user := range users {
-		job := NewSyncJob(user, s.pierreClient)
+		job := NewSyncJob(user, s.openFinanceClient)
 		jobs = append(jobs, job)
 	}
 
