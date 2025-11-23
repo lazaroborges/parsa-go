@@ -21,7 +21,7 @@ func NewAccountHandler(accountRepo *database.AccountRepository) *AccountHandler 
 
 type CreateAccountRequest struct {
 	Name        string  `json:"name"`
-	AccountType string  `json:"account_type"`
+	AccountType string  `json:"accountType"`
 	Currency    string  `json:"currency"`
 	Balance     float64 `json:"balance"`
 }
@@ -69,7 +69,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 	}
 
 	if req.Name == "" || req.AccountType == "" {
-		http.Error(w, "Name and account_type are required", http.StatusBadRequest)
+		http.Error(w, "Name and accountType are required", http.StatusBadRequest)
 		return
 	}
 
