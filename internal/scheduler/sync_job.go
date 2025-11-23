@@ -130,7 +130,7 @@ func (j *SyncJob) syncTransactions(ctx context.Context) error {
 
 // UserID returns the user ID for this job.
 func (j *SyncJob) UserID() string {
-	return j.user.ID
+	return fmt.Sprintf("%d", j.user.ID)
 }
 
 // Description returns a human-readable description of this job.

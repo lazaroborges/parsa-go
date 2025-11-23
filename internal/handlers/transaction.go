@@ -25,7 +25,7 @@ func NewTransactionHandler(transactionRepo *database.TransactionRepository, acco
 }
 
 type CreateTransactionRequest struct {
-	AccountID       string  `json:"account_id"`
+	AccountID       int64   `json:"account_id"`
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
 	Category        *string `json:"category,omitempty"`
@@ -39,15 +39,21 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	accountID := r.URL.Query().Get("account_id")
-	if accountID == "" {
+	accountIDStr := r.URL.Query().Get("account_id")
+	if accountIDStr == "" {
 		http.Error(w, "account_id is required", http.StatusBadRequest)
+		return
+	}
+
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid account_id", http.StatusBadRequest)
 		return
 	}
 
@@ -96,7 +102,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -108,7 +114,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	if req.AccountID == "" || req.Description == "" || req.TransactionDate == "" {
+	if req.AccountID == 0 || req.Description == "" || req.TransactionDate == "" {
 		http.Error(w, "account_id, description, and transaction_date are required", http.StatusBadRequest)
 		return
 	}
@@ -164,15 +170,21 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
-	if transactionID == "" {
+	transactionIDStr := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
+	if transactionIDStr == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
+		return
+	}
+
+	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid transaction ID", http.StatusBadRequest)
 		return
 	}
 
@@ -205,15 +217,21 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
-	if transactionID == "" {
+	transactionIDStr := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
+	if transactionIDStr == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
+		return
+	}
+
+	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid transaction ID", http.StatusBadRequest)
 		return
 	}
 

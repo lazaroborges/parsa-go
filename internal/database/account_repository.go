@@ -40,7 +40,7 @@ func (r *AccountRepository) Create(ctx context.Context, params models.CreateAcco
 	return &account, nil
 }
 
-func (r *AccountRepository) GetByID(ctx context.Context, id string) (*models.Account, error) {
+func (r *AccountRepository) GetByID(ctx context.Context, id int64) (*models.Account, error) {
 	query := `
 		SELECT id, user_id, name, account_type, currency, balance, created_at, updated_at
 		FROM accounts
@@ -64,7 +64,7 @@ func (r *AccountRepository) GetByID(ctx context.Context, id string) (*models.Acc
 	return &account, nil
 }
 
-func (r *AccountRepository) ListByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
+func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*models.Account, error) {
 	query := `
 		SELECT id, user_id, name, account_type, currency, balance, created_at, updated_at
 		FROM accounts
@@ -99,7 +99,7 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID string) ([]
 	return accounts, nil
 }
 
-func (r *AccountRepository) UpdateBalance(ctx context.Context, id string, balance float64) error {
+func (r *AccountRepository) UpdateBalance(ctx context.Context, id int64, balance float64) error {
 	query := `
 		UPDATE accounts
 		SET balance = $1, updated_at = CURRENT_TIMESTAMP
@@ -123,7 +123,7 @@ func (r *AccountRepository) UpdateBalance(ctx context.Context, id string, balanc
 	return nil
 }
 
-func (r *AccountRepository) Delete(ctx context.Context, id string) error {
+func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
 	query := `DELETE FROM accounts WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
