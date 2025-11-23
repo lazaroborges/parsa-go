@@ -6,6 +6,7 @@ bin/
 *.dylib
 parsa
 CLAUDE.md
+transactions.json
 
 # Environment files
 .env

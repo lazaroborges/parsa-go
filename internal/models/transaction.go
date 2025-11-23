@@ -6,13 +6,14 @@ import (
 
 type Transaction struct {
 	ID              string    `json:"id"`
-	AccountID       string    `json:"account_id"`
+	ProviderID      string    `json:"providerId"`
+	AccountID       string    `json:"accountId"`
 	Amount          float64   `json:"amount"`
 	Description     string    `json:"description"`
 	Category        *string   `json:"category,omitempty"`
-	TransactionDate time.Time `json:"transaction_date"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	TransactionDate time.Time `json:"transactionDate"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 type CreateTransactionParams struct {

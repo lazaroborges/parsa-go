@@ -101,6 +101,9 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			Name:          userInfo.Name,
 			OAuthProvider: &provider,
 			OAuthID:       &userInfo.ID,
+			FirstName:     userInfo.FirstName,
+			LastName:      userInfo.LastName,
+			AvatarURL:     &userInfo.AvatarURL,
 		})
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to create user: %v", err), http.StatusInternalServerError)
