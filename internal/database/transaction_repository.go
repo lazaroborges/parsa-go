@@ -40,7 +40,7 @@ func (r *TransactionRepository) Create(ctx context.Context, params models.Create
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*models.Transaction, error) {
+func (r *TransactionRepository) GetByID(ctx context.Context, id int64) (*models.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, created_at, updated_at
 		FROM transactions
@@ -64,7 +64,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*models
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID int64, limit, offset int) ([]*models.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, created_at, updated_at
 		FROM transactions
@@ -100,7 +100,7 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 	return transactions, nil
 }
 
-func (r *TransactionRepository) Update(ctx context.Context, id string, params models.UpdateTransactionParams) (*models.Transaction, error) {
+func (r *TransactionRepository) Update(ctx context.Context, id int64, params models.UpdateTransactionParams) (*models.Transaction, error) {
 	query := `
 		UPDATE transactions
 		SET amount = COALESCE($1, amount),
@@ -132,7 +132,7 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params mo
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
+func (r *TransactionRepository) Delete(ctx context.Context, id int64) error {
 	query := `DELETE FROM transactions WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)

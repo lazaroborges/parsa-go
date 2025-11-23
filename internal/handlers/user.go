@@ -20,7 +20,7 @@ func NewUserHandler(userRepo *database.UserRepository) *UserHandler {
 // HandleMe handles both GET and PATCH requests for the current user
 func (h *UserHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context (set by auth middleware)
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -36,7 +36,7 @@ func (h *UserHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID string) {
+func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	user, err := h.userRepo.GetByID(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
@@ -47,7 +47,7 @@ func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID
 	json.NewEncoder(w).Encode(user)
 }
 
-func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
+func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	var params models.UpdateUserParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

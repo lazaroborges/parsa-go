@@ -73,7 +73,7 @@ func (r *UserRepository) Create(ctx context.Context, params models.CreateUserPar
 	return &user, nil
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (*models.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
@@ -196,7 +196,7 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	return users, nil
 }
 
-func (r *UserRepository) Update(ctx context.Context, userID string, params models.UpdateUserParams) (*models.User, error) {
+func (r *UserRepository) Update(ctx context.Context, userID int64, params models.UpdateUserParams) (*models.User, error) {
 	// Encrypt provider key if provided
 	encryptedProviderKey, err := r.encryptProviderKey(params.ProviderKey)
 	if err != nil {

@@ -5,9 +5,9 @@ import (
 )
 
 type Transaction struct {
-	ID              string    `json:"id"`
+	ID              int64     `json:"id"`
 	ProviderID      string    `json:"providerId"`
-	AccountID       string    `json:"accountId"`
+	AccountID       int64     `json:"accountId"`
 	Amount          float64   `json:"amount"`
 	Description     string    `json:"description"`
 	Category        *string   `json:"category,omitempty"`
@@ -17,7 +17,7 @@ type Transaction struct {
 }
 
 type CreateTransactionParams struct {
-	AccountID       string
+	AccountID       int64
 	Amount          float64
 	Description     string
 	Category        *string
