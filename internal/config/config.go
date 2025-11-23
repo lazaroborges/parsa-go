@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig
-	Database  DatabaseConfig
-	OAuth     OAuthConfig
-	JWT       JWTConfig
-	Scheduler SchedulerConfig
+	Server     ServerConfig
+	Database   DatabaseConfig
+	OAuth      OAuthConfig
+	JWT        JWTConfig
+	Encryption EncryptionConfig
+	Scheduler  SchedulerConfig
 }
 
 type ServerConfig struct {
@@ -42,6 +43,10 @@ type GoogleOAuthConfig struct {
 
 type JWTConfig struct {
 	Secret string
+}
+
+type EncryptionConfig struct {
+	Key string
 }
 
 type SchedulerConfig struct {
@@ -100,6 +105,9 @@ func Load() (*Config, error) {
 		JWT: JWTConfig{
 			Secret: getEnv("JWT_SECRET", ""),
 		},
+		Encryption: EncryptionConfig{
+			Key: getEnv("ENCRYPTION_KEY", ""),
+		},
 		Scheduler: SchedulerConfig{
 			Enabled:       schedulerEnabled,
 			ScheduleTimes: schedulerTimes,
@@ -113,6 +121,12 @@ func Load() (*Config, error) {
 	// Validate required fields
 	if cfg.JWT.Secret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+	if cfg.Encryption.Key == "" {
+		return nil, fmt.Errorf("ENCRYPTION_KEY is required")
+	}
+	if len(cfg.Encryption.Key) != 32 {
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256")
 	}
 
 	return cfg, nil

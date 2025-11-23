@@ -11,6 +11,7 @@ import (
 
 	"parsa/internal/auth"
 	"parsa/internal/config"
+	"parsa/internal/crypto"
 	"parsa/internal/database"
 	"parsa/internal/handlers"
 	"parsa/internal/middleware"
@@ -39,8 +40,14 @@ func run() error {
 
 	log.Println("Connected to database")
 
+	// Initialize encryptor
+	encryptor, err := crypto.NewEncryptor(cfg.Encryption.Key)
+	if err != nil {
+		return err
+	}
+
 	// Initialize repositories
-	userRepo := database.NewUserRepository(db)
+	userRepo := database.NewUserRepository(db, encryptor)
 	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
 
