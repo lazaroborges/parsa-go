@@ -43,7 +43,7 @@ func (r *UserRepository) Create(ctx context.Context, params models.CreateUserPar
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -51,7 +51,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -67,7 +67,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -75,7 +75,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -91,7 +91,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 
 func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE oauth_provider = $1 AND oauth_id = $2
 	`
@@ -99,7 +99,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, provider, oauthID).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -115,7 +115,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 
 func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -131,7 +131,7 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 		var user models.User
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
-			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
+			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
 			&user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
@@ -145,4 +145,37 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	}
 
 	return users, nil
+}
+
+func (r *UserRepository) Update(ctx context.Context, userID string, params models.UpdateUserParams) (*models.User, error) {
+	query := `
+		UPDATE users
+		SET name = COALESCE($2, name),
+		    first_name = COALESCE($3, first_name),
+		    last_name = COALESCE($4, last_name),
+		    avatar_url = COALESCE($5, avatar_url),
+		    provider_key = COALESCE($6, provider_key),
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+	`
+
+	var user models.User
+	err := r.db.QueryRowContext(
+		ctx, query,
+		userID, params.Name, params.FirstName, params.LastName, params.AvatarURL, params.ProviderKey,
+	).Scan(
+		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
+		&user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	return &user, nil
 }

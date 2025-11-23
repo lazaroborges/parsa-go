@@ -105,7 +105,7 @@ func run() error {
 	// Protected routes - wrap with auth middleware
 	authMiddleware := middleware.Auth(jwt)
 
-	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
+	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleMe)))
 	mux.Handle("/api/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
 	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
 	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
