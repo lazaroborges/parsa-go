@@ -35,8 +35,6 @@ CREATE TABLE credit_card_data (
     purchase_date DATE NOT NULL,
     installment_number INT NOT NULL,
     total_installments INT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT check_installment_number CHECK (installment_number > 0),
     CONSTRAINT check_total_installments CHECK (total_installments > 0),
     CONSTRAINT check_installment_range CHECK (installment_number <= total_installments)
@@ -47,15 +45,11 @@ CREATE INDEX idx_credit_card_data_purchase_date ON credit_card_data(purchase_dat
 
 -- Create documents table (for Brazilian CPF/CNPJ)
 CREATE TABLE documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id int PRIMARY KEY AUTO_INCREMENT,
     type VARCHAR(10) NOT NULL CHECK (type IN ('cpf', 'cnpj')),
     number VARCHAR(20) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, type)
+
 );
 
-CREATE INDEX idx_documents_user_id ON documents(user_id);
 CREATE INDEX idx_documents_number ON documents(number);
 
