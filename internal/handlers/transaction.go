@@ -25,11 +25,11 @@ func NewTransactionHandler(transactionRepo *database.TransactionRepository, acco
 }
 
 type CreateTransactionRequest struct {
-	AccountID       int64   `json:"account_id"`
+	AccountID       int64   `json:"accountId"`
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
 	Category        *string `json:"category,omitempty"`
-	TransactionDate string  `json:"transaction_date"`
+	TransactionDate string  `json:"transactionDate"`
 }
 
 // HandleListTransactions returns transactions for a specific account
@@ -45,15 +45,15 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	accountIDStr := r.URL.Query().Get("account_id")
+	accountIDStr := r.URL.Query().Get("accountId")
 	if accountIDStr == "" {
-		http.Error(w, "account_id is required", http.StatusBadRequest)
+		http.Error(w, "accountId is required", http.StatusBadRequest)
 		return
 	}
 
 	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid account_id", http.StatusBadRequest)
+		http.Error(w, "Invalid accountId", http.StatusBadRequest)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	}
 
 	if req.AccountID == 0 || req.Description == "" || req.TransactionDate == "" {
-		http.Error(w, "account_id, description, and transaction_date are required", http.StatusBadRequest)
+		http.Error(w, "accountId, description, and transactionDate are required", http.StatusBadRequest)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	// Parse transaction date
 	transactionDate, err := time.Parse("2006-01-02", req.TransactionDate)
 	if err != nil {
-		http.Error(w, "Invalid transaction_date format (use YYYY-MM-DD)", http.StatusBadRequest)
+		http.Error(w, "Invalid transactionDate format (use YYYY-MM-DD)", http.StatusBadRequest)
 		return
 	}
 

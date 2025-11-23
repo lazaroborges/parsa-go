@@ -11,7 +11,7 @@ import (
 )
 
 type JWTClaims struct {
-	UserID int64  `json:"user_id"`
+	UserID int64  `json:"userId"`
 	Email  string `json:"email"`
 	Exp    int64  `json:"exp"`
 	Iat    int64  `json:"iat"`
