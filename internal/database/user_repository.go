@@ -18,18 +18,19 @@ func NewUserRepository(db *DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, params models.CreateUserParams) (*models.User, error) {
 	query := `
-		INSERT INTO users (email, name, oauth_provider, oauth_id, password_hash)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
-	`
+    INSERT INTO users (email, name, first_name, last_name, avatar_url, oauth_provider, oauth_id, password_hash)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+`
 
 	var user models.User
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.Email, params.Name, params.OAuthProvider, params.OAuthID, params.PasswordHash,
+		params.Email, params.Name, params.FirstName, params.LastName, params.AvatarURL,
+		params.OAuthProvider, params.OAuthID, params.PasswordHash,
 	).Scan(
-		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -42,15 +43,15 @@ func (r *UserRepository) Create(ctx context.Context, params models.CreateUserPar
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
 
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -66,15 +67,15 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
 
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -90,15 +91,15 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 
 func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE oauth_provider = $1 AND oauth_id = $2
 	`
 
 	var user models.User
 	err := r.db.QueryRowContext(ctx, query, provider, oauthID).Scan(
-		&user.ID, &user.Email, &user.Name,
-		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -114,7 +115,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 
 func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	query := `
-		SELECT id, email, name, oauth_provider, oauth_id, password_hash, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -129,8 +130,8 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(
-			&user.ID, &user.Email, &user.Name,
-			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash,
+			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
 			&user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {

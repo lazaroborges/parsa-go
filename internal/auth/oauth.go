@@ -25,9 +25,12 @@ type OAuthToken struct {
 }
 
 type OAuthUserInfo struct {
-	ID    string
-	Email string
-	Name  string
+	ID        string
+	Email     string
+	Name      string
+	FirstName string
+	LastName  string
+	AvatarURL string
 }
 
 // GoogleOAuthProvider implements Google OAuth 2.0
@@ -109,6 +112,7 @@ func (g *GoogleOAuthProvider) GetUserInfo(ctx context.Context, accessToken strin
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := g.httpClient.Do(req)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
@@ -120,9 +124,12 @@ func (g *GoogleOAuthProvider) GetUserInfo(ctx context.Context, accessToken strin
 	}
 
 	var googleUser struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		ID        string `json:"id"`
+		Email     string `json:"email"`
+		Name      string `json:"name"`
+		FirstName string `json:"given_name"`
+		LastName  string `json:"family_name"`
+		AvatarURL string `json:"picture"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
@@ -130,8 +137,11 @@ func (g *GoogleOAuthProvider) GetUserInfo(ctx context.Context, accessToken strin
 	}
 
 	return &OAuthUserInfo{
-		ID:    googleUser.ID,
-		Email: googleUser.Email,
-		Name:  googleUser.Name,
+		ID:        googleUser.ID,
+		Email:     googleUser.Email,
+		Name:      googleUser.Name,
+		FirstName: googleUser.FirstName,
+		LastName:  googleUser.LastName,
+		AvatarURL: googleUser.AvatarURL,
 	}, nil
 }

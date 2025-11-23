@@ -6,14 +6,14 @@ import (
 
 type Account struct {
 	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
+	UserID      string    `json:"userId"`
 	Name        string    `json:"name"`
-	AccountType string    `json:"account_type"`
+	AccountType string    `json:"accountType"`
 	Currency    string    `json:"currency"`
 	Balance     float64   `json:"balance"`
-	BankID      string    `json:"bank_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	BankID      string    `json:"bankId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type CreateAccountParams struct {
