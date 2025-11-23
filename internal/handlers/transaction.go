@@ -170,7 +170,7 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	transactionID := strings.TrimPrefix(r.URL.Path, "/transactions/")
+	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
 	if transactionID == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
 		return
@@ -211,7 +211,7 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	transactionID := strings.TrimPrefix(r.URL.Path, "/transactions/")
+	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
 	if transactionID == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
 		return
