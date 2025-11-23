@@ -32,7 +32,7 @@ func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value("user_id").(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -55,7 +55,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	userID, ok := r.Context().Value("user_id").(string)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -108,7 +108,7 @@ func (h *AccountHandler) HandleGetAccount(w http.ResponseWriter, r *http.Request
 	}
 
 	// Extract account ID from URL path
-	accountID := strings.TrimPrefix(r.URL.Path, "/accounts/")
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
@@ -143,7 +143,7 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	accountID := strings.TrimPrefix(r.URL.Path, "/accounts/")
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
