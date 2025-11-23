@@ -82,6 +82,21 @@
         </div>
 
         <div class="welcome" style="margin-top: 20px;">
+            <h3>Provider Key</h3>
+            <p style="color: #666; margin-bottom: 15px;">Add or update your provider key for Open Finance integration.</p>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input
+                    type="text"
+                    id="providerKey"
+                    placeholder="Enter your provider key"
+                    style="flex: 1; padding: 10px; font-size: 14px; border: 1px solid #ddd;"
+                />
+                <button onclick="updateProviderKey()" style="padding: 10px 20px;">Save</button>
+            </div>
+            <p id="providerKeyStatus" style="margin-top: 10px; font-size: 14px;"></p>
+        </div>
+
+        <div class="welcome" style="margin-top: 20px;">
             <h3>JWT Token</h3>
             <p style="word-break: break-all; font-family: monospace; font-size: 12px; background: #fff; padding: 15px; border: 1px solid #ddd;" id="jwtToken"></p>
             <button onclick="copyToken()" style="margin-top: 10px;">Copy Token</button>
@@ -90,13 +105,73 @@
 
     <script>
         const token = localStorage.getItem('token');
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        let user = JSON.parse(localStorage.getItem('user') || '{}');
 
         if (!token) {
             window.location.href = '/login';
         } else {
             document.getElementById('userName').textContent = user.name || user.email;
             document.getElementById('jwtToken').textContent = token;
+            loadUserData();
+        }
+
+        async function loadUserData() {
+            try {
+                const response = await fetch('/api/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    user = await response.json();
+                    localStorage.setItem('user', JSON.stringify(user));
+
+                    // Populate provider key if it exists
+                    if (user.providerKey) {
+                        document.getElementById('providerKey').value = user.providerKey;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load user data:', error);
+            }
+        }
+
+        async function updateProviderKey() {
+            const providerKey = document.getElementById('providerKey').value.trim();
+            const statusEl = document.getElementById('providerKeyStatus');
+
+            if (!providerKey) {
+                statusEl.textContent = 'Please enter a provider key';
+                statusEl.style.color = 'red';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/users/me', {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ providerKey })
+                });
+
+                if (response.ok) {
+                    const updatedUser = await response.json();
+                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                    statusEl.textContent = 'Provider key saved successfully!';
+                    statusEl.style.color = 'green';
+                } else {
+                    const error = await response.text();
+                    statusEl.textContent = `Failed to save: ${error}`;
+                    statusEl.style.color = 'red';
+                }
+            } catch (error) {
+                console.error('Failed to update provider key:', error);
+                statusEl.textContent = 'Network error. Please try again.';
+                statusEl.style.color = 'red';
+            }
         }
 
         function handleLogout() {

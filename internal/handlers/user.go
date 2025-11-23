@@ -6,6 +6,7 @@ import (
 
 	"parsa/internal/database"
 	"parsa/internal/middleware"
+	"parsa/internal/models"
 )
 
 type UserHandler struct {
@@ -16,13 +17,8 @@ func NewUserHandler(userRepo *database.UserRepository) *UserHandler {
 	return &UserHandler{userRepo: userRepo}
 }
 
-// HandleGetMe returns the current authenticated user
-func (h *UserHandler) HandleGetMe(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// HandleMe handles both GET and PATCH requests for the current user
+func (h *UserHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context (set by auth middleware)
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok {
@@ -30,9 +26,37 @@ func (h *UserHandler) HandleGetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch r.Method {
+	case http.MethodGet:
+		h.handleGetMe(w, r, userID)
+	case http.MethodPatch:
+		h.handleUpdateMe(w, r, userID)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID string) {
 	user, err := h.userRepo.GetByID(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
+func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
+	var params models.UpdateUserParams
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.userRepo.Update(r.Context(), userID, params)
+	if err != nil {
+		http.Error(w, "Failed to update user", http.StatusInternalServerError)
 		return
 	}
 
