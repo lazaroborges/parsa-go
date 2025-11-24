@@ -6,8 +6,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"parsa/internal/database"
 )
 
 // ScheduleTime represents a specific time of day when the scheduler should run.
@@ -39,38 +37,32 @@ func ParseScheduleTime(s string) (ScheduleTime, error) {
 	return ScheduleTime{Hour: hour, Minute: minute}, nil
 }
 
-// Scheduler manages periodic execution of sync jobs at specific times.
-// It demonstrates Go's concurrency with Ticker, select, context, and channels.
+// Scheduler manages periodic execution of jobs at specific times.
 type Scheduler struct {
-	userRepo          *database.UserRepository
-	openFinanceClient OpenFinanceFinanceClient
-	workerPool        *WorkerPool
-	scheduleTimes     []ScheduleTime
-	runOnStartup      bool
+	workerPool    *WorkerPool
+	scheduleTimes []ScheduleTime
+	runOnStartup  bool
+	jobProvider   func(context.Context) ([]Job, error)
 
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
-	lastRunDate string // Track last run date (YYYY-MM-DD) to prevent multiple runs
+	lastRunDate string
 	mu          sync.RWMutex
 }
 
 // SchedulerConfig holds configuration for the scheduler.
 type SchedulerConfig struct {
-	ScheduleTimes []string      // Schedule times in HH:MM format (e.g., ["05:00", "10:00", "14:00", "20:00"])
-	WorkerCount   int           // Number of concurrent workers
-	JobDelay      time.Duration // Delay between jobs (for rate limiting)
-	QueueSize     int           // Job queue buffer size
-	RunOnStartup  bool          // Run sync immediately on startup
+	ScheduleTimes []string
+	WorkerCount   int
+	JobDelay      time.Duration
+	QueueSize     int
+	RunOnStartup  bool
+	JobProvider   func(context.Context) ([]Job, error)
 }
 
 // NewScheduler creates a new scheduler with the given configuration.
-func NewScheduler(
-	userRepo *database.UserRepository,
-	openFinanceClient OpenFinanceFinanceClient,
-	config SchedulerConfig,
-) (*Scheduler, error) {
-	// Parse schedule times
+func NewScheduler(config SchedulerConfig) (*Scheduler, error) {
 	scheduleTimes := make([]ScheduleTime, 0, len(config.ScheduleTimes))
 	for _, timeStr := range config.ScheduleTimes {
 		st, err := ParseScheduleTime(timeStr)
@@ -84,46 +76,37 @@ func NewScheduler(
 		return nil, fmt.Errorf("at least one schedule time is required")
 	}
 
-	// Create worker pool
 	workerPool := NewWorkerPool(config.WorkerCount, config.JobDelay, config.QueueSize)
-
-	// Create context for cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
 	log.Printf("Scheduler initialized with %d schedule times: %v", len(scheduleTimes), config.ScheduleTimes)
 	log.Printf("Worker pool: %d workers, %v delay between jobs", config.WorkerCount, config.JobDelay)
 
 	return &Scheduler{
-		userRepo:          userRepo,
-		openFinanceClient: openFinanceClient,
-		workerPool:        workerPool,
-		scheduleTimes:     scheduleTimes,
-		runOnStartup:      config.RunOnStartup,
-		ctx:               ctx,
-		cancel:            cancel,
+		workerPool:    workerPool,
+		scheduleTimes: scheduleTimes,
+		runOnStartup:  config.RunOnStartup,
+		jobProvider:   config.JobProvider,
+		ctx:           ctx,
+		cancel:        cancel,
 	}, nil
 }
 
 // Start launches the scheduler and worker pool.
-// It runs in a goroutine and checks every minute if it's time to run.
-// Demonstrates: goroutines, Ticker, select with context, channels.
 func (s *Scheduler) Start() {
 	log.Println("Starting scheduler...")
 
-	// Start worker pool
 	s.workerPool.Start()
 
-	// Run initial sync if configured
 	if s.runOnStartup {
-		log.Println("Scheduler: Running initial sync on startup")
+		log.Println("Scheduler: Running initial job batch on startup")
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			s.runSync()
+			s.runJobs()
 		}()
 	}
 
-	// Start scheduler loop
 	s.wg.Add(1)
 	go s.scheduleLoop()
 
@@ -131,12 +114,9 @@ func (s *Scheduler) Start() {
 }
 
 // scheduleLoop is the main scheduling loop.
-// It uses a Ticker to check every minute if it's time to run.
-// Demonstrates: Ticker, select with context, time-based scheduling.
 func (s *Scheduler) scheduleLoop() {
 	defer s.wg.Done()
 
-	// Create ticker that fires every minute
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -149,17 +129,15 @@ func (s *Scheduler) scheduleLoop() {
 			return
 
 		case now := <-ticker.C:
-			// Check if current time matches any scheduled time
 			if s.shouldRun(now) {
 				log.Printf("Scheduler: Triggered at %s", now.Format("15:04"))
-				s.runSync()
+				s.runJobs()
 			}
 		}
 	}
 }
 
 // shouldRun checks if the current time matches any scheduled time.
-// It also prevents running multiple times in the same minute by tracking last run.
 func (s *Scheduler) shouldRun(now time.Time) bool {
 	currentHour := now.Hour()
 	currentMinute := now.Minute()
@@ -168,12 +146,10 @@ func (s *Scheduler) shouldRun(now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if we already ran at this exact time today
 	if s.lastRunDate == currentKey {
 		return false
 	}
 
-	// Check if current time matches any scheduled time
 	for _, st := range s.scheduleTimes {
 		if currentHour == st.Hour && currentMinute == st.Minute {
 			s.lastRunDate = currentKey
@@ -184,51 +160,39 @@ func (s *Scheduler) shouldRun(now time.Time) bool {
 	return false
 }
 
-// runSync executes a sync run for all users.
-// It fetches all users from the database and creates sync jobs for each.
-func (s *Scheduler) runSync() {
-	log.Println("Starting sync run for all users...")
+// runJobs executes the job provider and submits jobs to the worker pool.
+func (s *Scheduler) runJobs() {
+	if s.jobProvider == nil {
+		log.Println("Scheduler: No job provider configured")
+		return
+	}
+
+	log.Println("Scheduler: Fetching jobs...")
 
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	defer cancel()
 
-	// Fetch all users
-	users, err := s.userRepo.List(ctx)
+	jobs, err := s.jobProvider(ctx)
 	if err != nil {
-		log.Printf("Scheduler: Failed to fetch users: %v", err)
+		log.Printf("Scheduler: Failed to fetch jobs: %v", err)
 		return
 	}
 
-	if len(users) == 0 {
-		log.Println("Scheduler: No users to sync")
+	if len(jobs) == 0 {
+		log.Println("Scheduler: No jobs to process")
 		return
 	}
 
-	log.Printf("Scheduler: Creating sync jobs for %d users", len(users))
-
-	// Create sync jobs for each user
-	jobs := make([]Job, 0, len(users))
-	for _, user := range users {
-		job := NewSyncJob(user, s.openFinanceClient)
-		jobs = append(jobs, job)
-	}
-
-	// Submit jobs to worker pool
+	log.Printf("Scheduler: Submitting %d jobs to worker pool", len(jobs))
 	s.workerPool.SubmitBatch(jobs)
-
-	log.Printf("Scheduler: Submitted %d sync jobs to worker pool", len(jobs))
 }
 
 // Shutdown gracefully stops the scheduler and worker pool.
-// It waits for the scheduler loop to finish and then shuts down the worker pool.
-// Demonstrates: graceful shutdown, WaitGroups, context cancellation, timeouts.
 func (s *Scheduler) Shutdown(timeout time.Duration) {
 	log.Println("Scheduler: Initiating graceful shutdown...")
 
-	// Cancel context to stop scheduler loop
 	s.cancel()
 
-	// Wait for scheduler loop to finish with timeout
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -242,25 +206,21 @@ func (s *Scheduler) Shutdown(timeout time.Duration) {
 		log.Println("Scheduler: Timeout waiting for scheduler loop to stop")
 	}
 
-	// Shutdown worker pool
 	s.workerPool.ShutdownWithTimeout(timeout)
 
 	log.Println("Scheduler: Shutdown complete")
 }
 
-// TriggerNow manually triggers a sync run immediately.
-// Useful for testing or manual sync triggers via API endpoint.
+// TriggerNow manually triggers a job run immediately.
 func (s *Scheduler) TriggerNow() {
-	log.Println("Scheduler: Manual sync triggered")
-	go s.runSync()
+	log.Println("Scheduler: Manual trigger")
+	go s.runJobs()
 }
 
 // GetNextScheduledTime returns the next scheduled run time.
-// Useful for monitoring and displaying to users.
 func (s *Scheduler) GetNextScheduledTime() time.Time {
 	now := time.Now()
 
-	// Find the next scheduled time today or tomorrow
 	for _, st := range s.scheduleTimes {
 		scheduledTime := time.Date(now.Year(), now.Month(), now.Day(), st.Hour, st.Minute, 0, 0, now.Location())
 		if scheduledTime.After(now) {
@@ -268,7 +228,6 @@ func (s *Scheduler) GetNextScheduledTime() time.Time {
 		}
 	}
 
-	// No more scheduled times today, return first time tomorrow
 	if len(s.scheduleTimes) > 0 {
 		st := s.scheduleTimes[0]
 		tomorrow := now.AddDate(0, 0, 1)
