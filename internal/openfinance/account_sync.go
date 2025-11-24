@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"parsa/internal/database"
 	"parsa/internal/models"
@@ -91,10 +90,22 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 		return fmt.Errorf("failed to parse balance: %w", err)
 	}
 
-	// Find or create bank
+	// Parse timestamps from API response
+	createdAt, err := apiAccount.GetCreatedAt()
+	if err != nil {
+		return fmt.Errorf("failed to parse createdAt: %w", err)
+	}
+	updatedAt, err := apiAccount.GetUpdatedAt()
+	if err != nil {
+		return fmt.Errorf("failed to parse updatedAt: %w", err)
+	}
+
+	// Find or create bank using the 'name' field from API response
 	var bankID *int64
-	if apiAccount.ProviderCode != "" {
-		bank, err := s.bankRepo.FindOrCreateByConnector(ctx, apiAccount.ProviderCode, apiAccount.ProviderCode)
+	if apiAccount.AccountName != "" {
+		// Use the account name as both bank name and connector
+		// The connector will be the unique identifier for the bank
+		bank, err := s.bankRepo.FindOrCreateByConnector(ctx, apiAccount.AccountName, apiAccount.AccountName)
 		if err != nil {
 			return fmt.Errorf("failed to find/create bank: %w", err)
 		}
@@ -103,24 +114,21 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 
 	// Prepare upsert parameters
 	params := models.UpsertAccountParams{
-		UserID:      userID,
-		Name:        apiAccount.AccountName,
-		AccountType: apiAccount.AccountType,
-		Currency:    apiAccount.AccountCurrencyCode,
-		Balance:     balance,
-		BankID:      bankID,
-		ProviderID:  apiAccount.AccountID,
+		UserID:            userID,
+		Name:              apiAccount.AccountName,
+		AccountType:       apiAccount.AccountType,
+		Currency:          apiAccount.AccountCurrencyCode,
+		Balance:           balance,
+		BankID:            bankID,
+		ProviderID:        apiAccount.AccountID,
+		ProviderCreatedAt: createdAt,
+		ProviderUpdatedAt: updatedAt,
 	}
 
 	// Set subtype if available
 	if apiAccount.AccountSubtype != "" {
 		params.Subtype = &apiAccount.AccountSubtype
 	}
-
-	// Set provider timestamps (using current time as fallback)
-	now := time.Now()
-	params.ProviderUpdatedAt = &now
-	params.ProviderCreatedAt = &now
 
 	// Check if account exists to determine if this is create or update
 	existingAccount, err := s.accountRepo.GetByProviderID(ctx, userID, apiAccount.AccountID)

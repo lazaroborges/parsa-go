@@ -51,6 +51,8 @@ type Account struct {
 	AccountCurrencyCode  string      `json:"currencyCode"`
 	AccountMarketingName string      `json:"marketingName"`
 	BalanceString        string      `json:"balance"` // API returns balance as string
+	CreatedAt            string      `json:"createdAt"`
+	UpdatedAt            string      `json:"updatedAt"`
 	BankData             *BankData   `json:"bankData,omitempty"`
 	CreditData           *CreditData `json:"creditData,omitempty"`
 }
@@ -65,6 +67,30 @@ func (a *Account) GetBalance() (float64, error) {
 		return 0, fmt.Errorf("failed to parse balance '%s': %w", a.BalanceString, err)
 	}
 	return balance, nil
+}
+
+// GetCreatedAt parses and returns the createdAt timestamp
+func (a *Account) GetCreatedAt() (*time.Time, error) {
+	if a.CreatedAt == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, a.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse createdAt '%s': %w", a.CreatedAt, err)
+	}
+	return &t, nil
+}
+
+// GetUpdatedAt parses and returns the updatedAt timestamp
+func (a *Account) GetUpdatedAt() (*time.Time, error) {
+	if a.UpdatedAt == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, a.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updatedAt '%s': %w", a.UpdatedAt, err)
+	}
+	return &t, nil
 }
 
 // BankData represents bank-specific account data
