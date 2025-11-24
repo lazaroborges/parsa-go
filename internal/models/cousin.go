@@ -1,4 +1,4 @@
-// Cousin represents a unique counterpart (merchant or individual - CNPJ or CPF) in the real world and a set of things that help identify them (Document, merchant object, description patterns, etc.). This doesn't have to with persons and family relations.
+// Cousin represents a unique counterpart (merchant or individual - CNPJ or CPF) in the real world and a set of things that help identify them (Document, merchant object, description patterns, etc.). This doesn't have to with persons and family relationships.
 //
 // Fields:
 //   - ID: Unique identifier (BIGINT).
@@ -9,8 +9,20 @@
 package models
 
 type Cousin struct {
-	ID           int64    `json:"id"`
-	Document     Document `json:"document"`
-	BusinessName string   `json:"businessName"`
-	Name         string   `json:"name"`
+	ID           int64  `json:"id"`
+	Document     int64  `json:"documentId"`
+	BusinessName string `json:"businessName"`
+	Name         string `json:"name"`
+}
+
+type CreateCousinParams struct {
+	DocumentID   int64
+	BusinessName string
+	Name         string
+}
+
+type UpdateCousinParams struct {
+	DocumentID   *int64
+	BusinessName *string
+	Name         *string
 }
