@@ -5,15 +5,18 @@ import (
 )
 
 var (
-	// Allowed account types and subtypes for validation
+	// Allowed account types and subtypes for validation (from Open Finance API)
 	accountTypes = map[string]struct{}{
-		"BANK":   {},
-		"CREDIT": {},
+		"BANK":       {},
+		"CREDIT":     {},
+		"INVESTMENT": {},
+		"LOAN":       {},
 	}
 	accountSubtypes = map[string]struct{}{
-		"CHECKING": {},
-		"SAVINGS":  {},
-		"PAYMENT":  {},
+		"CHECKING_ACCOUNT": {},
+		"SAVINGS_ACCOUNT":  {},
+		"CREDIT_CARD":      {},
+		"PAYMENT_ACCOUNT":  {},
 	}
 )
 
@@ -58,4 +61,17 @@ type UpdateAccountParams struct {
 	Name        *string
 	AccountType *string
 	Balance     *float64
+}
+
+type UpsertAccountParams struct {
+	UserID            int64
+	Name              string
+	AccountType       string
+	Subtype           *string
+	Currency          string
+	Balance           float64
+	BankID            *int64
+	ProviderID        string
+	ProviderUpdatedAt *time.Time
+	ProviderCreatedAt *time.Time
 }

@@ -238,3 +238,44 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params models
 
 	return &user, nil
 }
+
+// ListUsersWithProviderKey retrieves all users that have a provider key set
+func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*models.User, error) {
+	query := `
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		FROM users
+		WHERE provider_key IS NOT NULL AND provider_key != ''
+		ORDER BY id
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users with provider key: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var user models.User
+		err := rows.Scan(
+			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
+			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
+			&user.CreatedAt, &user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+
+		if err := r.decryptProviderKey(&user); err != nil {
+			return nil, err
+		}
+
+		users = append(users, &user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating users: %w", err)
+	}
+
+	return users, nil
+}

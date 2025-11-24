@@ -15,6 +15,8 @@ import (
 	"parsa/internal/database"
 	"parsa/internal/handlers"
 	"parsa/internal/middleware"
+	"parsa/internal/openfinance"
+	"parsa/internal/scheduler"
 )
 
 func main() {
@@ -49,6 +51,7 @@ func run() error {
 	userRepo := database.NewUserRepository(db, encryptor)
 	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
+	bankRepo := database.NewBankRepository(db)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -92,6 +95,49 @@ func run() error {
 	// Apply global middleware
 	handler := middleware.Logging(middleware.CORS(mux))
 
+	// Initialize Open Finance sync (if enabled)
+	var sched *scheduler.Scheduler
+	if cfg.Scheduler.Enabled {
+		// Initialize Open Finance client and sync service
+		ofClient := openfinance.NewClient()
+		syncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, bankRepo)
+
+		// Create job provider function
+		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
+			users, err := userRepo.ListUsersWithProviderKey(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			jobs := make([]scheduler.Job, 0, len(users))
+			for _, user := range users {
+				job := openfinance.NewAccountSyncJob(user.ID, syncService)
+				jobs = append(jobs, job)
+			}
+
+			log.Printf("Job provider: Created %d account sync jobs", len(jobs))
+			return jobs, nil
+		}
+
+		// Initialize scheduler
+		var err error
+		sched, err = scheduler.NewScheduler(scheduler.SchedulerConfig{
+			ScheduleTimes: cfg.Scheduler.ScheduleTimes,
+			WorkerCount:   cfg.Scheduler.WorkerCount,
+			JobDelay:      cfg.Scheduler.JobDelay,
+			QueueSize:     cfg.Scheduler.QueueSize,
+			RunOnStartup:  cfg.Scheduler.RunOnStartup,
+			JobProvider:   jobProvider,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Start scheduler
+		sched.Start()
+		log.Println("Account sync scheduler started")
+	}
+
 	// Create server
 	addr := cfg.Server.Host + ":" + cfg.Server.Port
 	srv := &http.Server{
@@ -120,6 +166,11 @@ func run() error {
 	// Graceful shutdown with 30 second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Shutdown scheduler if running
+	if sched != nil {
+		sched.Shutdown(30 * time.Second)
+	}
 
 	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
