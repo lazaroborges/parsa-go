@@ -258,4 +258,5 @@ MIT
 ## TODO 
 - **OAuth Duplication**: Rebase every new user from different OAuth Providers to reference the same email 
 - **Authentication**: OAuth 2.0 (Google) with JWT token-based sessions
+- **Hash**: Hash account balances and transaction amounts 
 

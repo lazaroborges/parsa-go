@@ -4,16 +4,45 @@ import (
 	"time"
 )
 
+var (
+	// Allowed account types and subtypes for validation
+	accountTypes = map[string]struct{}{
+		"BANK":   {},
+		"CREDIT": {},
+	}
+	accountSubtypes = map[string]struct{}{
+		"CHECKING": {},
+		"SAVINGS":  {},
+		"PAYMENT":  {},
+	}
+)
+
+// IsValidAccountType checks if the provided account type is valid.
+func IsValidAccountType(t string) bool {
+	_, ok := accountTypes[t]
+	return ok
+}
+
+// IsValidAccountSubtype checks if the provided subtype is valid.
+func IsValidAccountSubtype(s string) bool {
+	_, ok := accountSubtypes[s]
+	return ok
+}
+
 type Account struct {
-	ID          int64     `json:"id"`
-	UserID      int64     `json:"userId"`
-	Name        string    `json:"name"`
-	AccountType string    `json:"accountType"`
-	Currency    string    `json:"currency"`
-	Balance     float64   `json:"balance"`
-	BankID      int64     `json:"bankId"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID                int64     `json:"id"`
+	UserID            int64     `json:"userId"`
+	Name              string    `json:"name"`
+	AccountType       string    `json:"accountType"`
+	Subtype           string    `json:"subtype"`
+	Currency          string    `json:"currency"`
+	Balance           float64   `json:"balance"`
+	BankID            int64     `json:"bankId"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	ProviderID        string    `json:"providerId"`
+	ProviderUpdatedAt time.Time `json:"providerUpdatedAt"`
+	ProviderCreatedAt time.Time `json:"providerCreatedAt"`
 }
 
 type CreateAccountParams struct {
