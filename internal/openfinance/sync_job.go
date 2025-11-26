@@ -54,3 +54,51 @@ func (j *AccountSyncJob) UserID() string {
 func (j *AccountSyncJob) Description() string {
 	return fmt.Sprintf("Account sync for user %d", j.userID)
 }
+
+// TransactionSyncJob implements the scheduler.Job interface for syncing user transactions
+type TransactionSyncJob struct {
+	userID      int64
+	syncService *TransactionSyncService
+}
+
+// NewTransactionSyncJob creates a new transaction sync job for a user
+func NewTransactionSyncJob(userID int64, syncService *TransactionSyncService) *TransactionSyncJob {
+	return &TransactionSyncJob{
+		userID:      userID,
+		syncService: syncService,
+	}
+}
+
+// Execute runs the transaction sync job
+func (j *TransactionSyncJob) Execute(ctx context.Context) error {
+	log.Printf("Starting transaction sync for user %d", j.userID)
+
+	result, err := j.syncService.SyncUserTransactions(ctx, j.userID)
+	if err != nil {
+		log.Printf("Transaction sync failed for user %d: %v", j.userID, err)
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	// Log results
+	if len(result.Errors) > 0 {
+		log.Printf("Transaction sync for user %d completed with errors: Created=%d, Updated=%d, Skipped=%d, Errors=%d",
+			j.userID, result.Created, result.Updated, result.Skipped, len(result.Errors))
+		// Return error to mark for retry
+		return fmt.Errorf("sync completed with %d errors", len(result.Errors))
+	}
+
+	log.Printf("Transaction sync for user %d completed successfully: Created=%d, Updated=%d, Skipped=%d",
+		j.userID, result.Created, result.Updated, result.Skipped)
+
+	return nil
+}
+
+// UserID returns the user ID associated with this job
+func (j *TransactionSyncJob) UserID() string {
+	return strconv.FormatInt(j.userID, 10)
+}
+
+// Description returns a human-readable description of the job
+func (j *TransactionSyncJob) Description() string {
+	return fmt.Sprintf("Transaction sync for user %d", j.userID)
+}

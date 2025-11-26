@@ -69,16 +69,22 @@ CREATE INDEX idx_accounts_user_id ON accounts(user_id);
 CREATE INDEX idx_accounts_item_id ON accounts(item_id);
 CREATE INDEX idx_accounts_bank_id ON accounts(bank_id);
 CREATE INDEX idx_accounts_subtype ON accounts(subtype);
+-- Index for transaction sync account matching (name, account_type, subtype)
+CREATE INDEX idx_accounts_match ON accounts(name, account_type, subtype);
 
 -- Transactions table
+-- Primary key is the provider's transaction ID (string UUID)
 CREATE TABLE transactions (
-    id BIGSERIAL PRIMARY KEY,
+    id VARCHAR(255) PRIMARY KEY,  -- Provider's transaction id
     account_id VARCHAR(255) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    provider_id VARCHAR(255),  -- Provider's transaction ID for deduplication
     amount DECIMAL(15, 2) NOT NULL,
     description TEXT NOT NULL,
     category VARCHAR(100),
-    transaction_date DATE NOT NULL,
+    transaction_date TIMESTAMP WITH TIME ZONE NOT NULL,  -- Full timestamp from API
+    type VARCHAR(20) NOT NULL DEFAULT 'DEBIT',  -- DEBIT or CREDIT
+    status VARCHAR(20) NOT NULL DEFAULT 'POSTED',  -- PENDING, POSTED
+    provider_created_at TIMESTAMP WITH TIME ZONE, -- NULL for now. 
+    provider_updated_at TIMESTAMP WITH TIME ZONE, -- NULL for now.
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -86,12 +92,13 @@ CREATE TABLE transactions (
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_date ON transactions(transaction_date);
 CREATE INDEX idx_transactions_category ON transactions(category);
-CREATE INDEX idx_transactions_provider_id ON transactions(provider_id);
+CREATE INDEX idx_transactions_type ON transactions(type);
+CREATE INDEX idx_transactions_status ON transactions(status);
 
 -- Credit card data (installment info for credit card transactions)
 CREATE TABLE credit_card_data (
     id BIGSERIAL PRIMARY KEY,
-    transaction_id BIGINT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    transaction_id VARCHAR(255) NOT NULL UNIQUE REFERENCES transactions(id) ON DELETE CASCADE,
     purchase_date DATE NOT NULL,
     installment_number INT NOT NULL,
     total_installments INT NOT NULL,

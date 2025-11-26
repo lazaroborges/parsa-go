@@ -52,7 +52,8 @@ func run() error {
 	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
 	itemRepo := database.NewItemRepository(db)
-	// bankRepo := database.NewBankRepository(db) // Dormant until Pierre fixes their API
+	creditCardDataRepo := database.NewCreditCardDataRepository(db)
+	bankRepo := database.NewBankRepository(db)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -99,24 +100,31 @@ func run() error {
 	// Initialize Open Finance sync (if enabled)
 	var sched *scheduler.Scheduler
 	if cfg.Scheduler.Enabled {
-		// Initialize Open Finance client and sync service
+		// Initialize Open Finance client and sync services
 		ofClient := openfinance.NewClient()
-		syncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
+		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
+		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
 
-		// Create job provider function
+		// Create job provider function that creates both account and transaction sync jobs
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
 			users, err := userRepo.ListUsersWithProviderKey(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			jobs := make([]scheduler.Job, 0, len(users))
+			// Create jobs: first sync accounts, then sync transactions for each user
+			jobs := make([]scheduler.Job, 0, len(users)*2)
 			for _, user := range users {
-				job := openfinance.NewAccountSyncJob(user.ID, syncService)
-				jobs = append(jobs, job)
+				// Account sync job first
+				accountJob := openfinance.NewAccountSyncJob(user.ID, accountSyncService)
+				jobs = append(jobs, accountJob)
+
+				// Transaction sync job second (depends on accounts being synced)
+				transactionJob := openfinance.NewTransactionSyncJob(user.ID, transactionSyncService)
+				jobs = append(jobs, transactionJob)
 			}
 
-			log.Printf("Job provider: Created %d account sync jobs", len(jobs))
+			log.Printf("Job provider: Created %d sync jobs (%d users)", len(jobs), len(users))
 			return jobs, nil
 		}
 
@@ -136,7 +144,7 @@ func run() error {
 
 		// Start scheduler
 		sched.Start()
-		log.Println("Account sync scheduler started")
+		log.Println("Sync scheduler started (accounts + transactions)")
 	}
 
 	// Create server

@@ -295,6 +295,65 @@ func (r *AccountRepository) Exists(ctx context.Context, id string) (bool, error)
 	return exists, nil
 }
 
+// FindByMatch finds an account by matching name, account_type, and subtype for a specific user
+// This is used to match transactions from the provider API to our accounts
+func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name, accountType, subtype string) (*models.Account, error) {
+	query := `
+		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		       provider_updated_at, provider_created_at, created_at, updated_at
+		FROM accounts
+		WHERE user_id = $1 AND name = $2 AND account_type = $3 AND subtype = $4
+		LIMIT 1
+	`
+
+	var account models.Account
+	var itemID, subtypeOut sql.NullString
+	var bankID sql.NullInt64
+	var providerUpdatedAt, providerCreatedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, userID, name, accountType, subtype).Scan(
+		&account.ID, &account.UserID, &itemID, &account.Name,
+		&account.AccountType, &subtypeOut, &account.Currency, &account.Balance,
+		&bankID, &providerUpdatedAt, &providerCreatedAt,
+		&account.CreatedAt, &account.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // Not found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find account by match: %w", err)
+	}
+
+	if itemID.Valid {
+		account.ItemID = itemID.String
+	}
+	if subtypeOut.Valid {
+		account.Subtype = subtypeOut.String
+	}
+	if bankID.Valid {
+		account.BankID = bankID.Int64
+	}
+	if providerUpdatedAt.Valid {
+		account.ProviderUpdatedAt = providerUpdatedAt.Time
+	}
+	if providerCreatedAt.Valid {
+		account.ProviderCreatedAt = providerCreatedAt.Time
+	}
+
+	return &account, nil
+}
+
+// UpdateBankID updates the bank_id for an account
+func (r *AccountRepository) UpdateBankID(ctx context.Context, accountID string, bankID int64) error {
+	query := `UPDATE accounts SET bank_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	_, err := r.db.ExecContext(ctx, query, bankID, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to update account bank_id: %w", err)
+	}
+	return nil
+}
+
 // nullString converts a string to sql.NullString (empty string = NULL)
 func nullString(s string) sql.NullString {
 	if s == "" {
