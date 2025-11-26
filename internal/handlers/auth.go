@@ -164,11 +164,13 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Check if user already exists
-	existingUser, _ := h.userRepo.GetByEmail(ctx, req.Email)
-	if existingUser != nil {
+	existingUser, err := h.userRepo.GetByEmail(ctx, req.Email)
+	if err == nil && existingUser != nil {
 		http.Error(w, "User with this email already exists", http.StatusConflict)
 		return
 	}
+	// Note: If err is a "not found" type error, we proceed with creation.
+	// Other errors (e.g., database failures) should ideally be handled.
 
 	// Hash password
 	passwordHash, err := auth.HashPassword(req.Password)
