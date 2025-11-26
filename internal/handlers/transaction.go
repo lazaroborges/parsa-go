@@ -10,6 +10,8 @@ import (
 	"parsa/internal/database"
 	"parsa/internal/middleware"
 	"parsa/internal/models"
+
+	"github.com/google/uuid"
 )
 
 type TransactionHandler struct {
@@ -25,11 +27,13 @@ func NewTransactionHandler(transactionRepo *database.TransactionRepository, acco
 }
 
 type CreateTransactionRequest struct {
-	AccountID       string  `json:"accountId"` // Now a string (UUID)
+	AccountID       string  `json:"accountId"`
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
 	Category        *string `json:"category,omitempty"`
 	TransactionDate string  `json:"transactionDate"`
+	Type            string  `json:"type,omitempty"`   // DEBIT or CREDIT, defaults to DEBIT
+	Status          string  `json:"status,omitempty"` // PENDING or POSTED, defaults to POSTED
 }
 
 // HandleListTransactions returns transactions for a specific account
@@ -132,12 +136,28 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Set defaults
+	txType := req.Type
+	if txType == "" {
+		txType = "DEBIT"
+	}
+	txStatus := req.Status
+	if txStatus == "" {
+		txStatus = "POSTED"
+	}
+
+	// Generate UUID for manual transactions
+	txID := uuid.New().String()
+
 	transaction, err := h.transactionRepo.Create(r.Context(), models.CreateTransactionParams{
+		ID:              txID,
 		AccountID:       req.AccountID,
 		Amount:          req.Amount,
 		Description:     req.Description,
 		Category:        req.Category,
 		TransactionDate: transactionDate,
+		Type:            txType,
+		Status:          txStatus,
 	})
 
 	if err != nil {
@@ -170,20 +190,18 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	transactionIDStr := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
-	if transactionIDStr == "" {
+	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
+	if transactionID == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
-		return
-	}
-
-	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid transaction ID", http.StatusBadRequest)
 		return
 	}
 
 	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
+		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
+		return
+	}
+	if transaction == nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
 		return
 	}
@@ -217,20 +235,18 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	transactionIDStr := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
-	if transactionIDStr == "" {
+	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
+	if transactionID == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
-		return
-	}
-
-	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid transaction ID", http.StatusBadRequest)
 		return
 	}
 
 	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
+		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
+		return
+	}
+	if transaction == nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
 		return
 	}

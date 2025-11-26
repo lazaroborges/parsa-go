@@ -58,6 +58,48 @@ func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, conn
 	return &bank, nil
 }
 
+// FindOrCreateByName finds a bank by name or creates it if it doesn't exist
+func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*models.Bank, error) {
+	query := `
+		SELECT id, name, connector
+		FROM banks
+		WHERE name = $1
+	`
+
+	var bank models.Bank
+	var connector sql.NullString
+	err := r.db.QueryRowContext(ctx, query, name).Scan(
+		&bank.ID, &bank.Name, &connector,
+	)
+
+	if err == nil {
+		bank.Connector = connector.String
+		return &bank, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query bank: %w", err)
+	}
+
+	// Bank not found, create it (connector will be empty)
+	insertQuery := `
+		INSERT INTO banks (name)
+		VALUES ($1)
+		RETURNING id, name, connector
+	`
+
+	err = r.db.QueryRowContext(ctx, insertQuery, name).Scan(
+		&bank.ID, &bank.Name, &connector,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create bank: %w", err)
+	}
+
+	bank.Connector = connector.String
+	return &bank, nil
+}
+
 // GetByID retrieves a bank by its ID
 func (r *BankRepository) GetByID(ctx context.Context, id int64) (*models.Bank, error) {
 	query := `
