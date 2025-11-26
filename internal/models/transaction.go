@@ -7,7 +7,7 @@ import (
 type Transaction struct {
 	ID              int64     `json:"id"`
 	ProviderID      string    `json:"providerId"`
-	AccountID       int64     `json:"accountId"`
+	AccountID       string    `json:"accountId"` // FK to accounts table (string PK)
 	Amount          float64   `json:"amount"`
 	Description     string    `json:"description"`
 	Category        *string   `json:"category,omitempty"`
@@ -17,7 +17,7 @@ type Transaction struct {
 }
 
 type CreateTransactionParams struct {
-	AccountID       int64
+	AccountID       string
 	Amount          float64
 	Description     string
 	Category        *string

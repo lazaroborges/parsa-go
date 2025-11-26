@@ -25,9 +25,10 @@ migrate-down:
 db-create:
 	createdb -O $(DB_USER) $(DB_NAME)
 
-# Drop database
+# Drop database (terminates active connections first)
 db-drop:
-	dropdb $(DB_NAME)
+	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d postgres -c "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '$(DB_NAME)' AND pid <> pg_backend_pid();" || true
+	dropdb -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) $(DB_NAME) || true
 
 # Reset database (drop, create, migrate)
 db-reset: db-drop db-create migrate-up

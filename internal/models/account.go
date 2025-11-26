@@ -31,8 +31,9 @@ func IsValidAccountSubtype(s string) bool {
 }
 
 type Account struct {
-	ID                int64     `json:"id"`
+	ID                string    `json:"id"` // Provider's account id (UUID string)
 	UserID            int64     `json:"userId"`
+	ItemID            string    `json:"itemId"` // FK to items table
 	Name              string    `json:"name"`
 	AccountType       string    `json:"accountType"`
 	Subtype           string    `json:"subtype"`
@@ -41,20 +42,19 @@ type Account struct {
 	BankID            int64     `json:"bankId"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
-	ProviderID        string    `json:"providerId"`
 	ProviderUpdatedAt time.Time `json:"providerUpdatedAt"`
 	ProviderCreatedAt time.Time `json:"providerCreatedAt"`
-	ItemID            string    `json:"itemId"`
 }
 
 type CreateAccountParams struct {
+	ID          string // Provider's account id
 	UserID      int64
+	ItemID      string
 	Name        string
 	AccountType string
 	Currency    string
 	Balance     float64
 	BankID      int64
-	ItemID      string
 }
 
 type UpdateAccountParams struct {
@@ -64,15 +64,15 @@ type UpdateAccountParams struct {
 }
 
 type UpsertAccountParams struct {
+	ID                string // Provider's account id (used as PK)
 	UserID            int64
+	ItemID            string
 	Name              string
 	AccountType       string
 	Subtype           *string
 	Currency          string
 	Balance           float64
 	BankID            *int64
-	ProviderID        string
 	ProviderUpdatedAt *time.Time
 	ProviderCreatedAt *time.Time
-	ItemID            *string
 }

@@ -51,7 +51,8 @@ func run() error {
 	userRepo := database.NewUserRepository(db, encryptor)
 	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
-	bankRepo := database.NewBankRepository(db)
+	itemRepo := database.NewItemRepository(db)
+	// bankRepo := database.NewBankRepository(db) // Dormant until Pierre fixes their API
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -100,7 +101,7 @@ func run() error {
 	if cfg.Scheduler.Enabled {
 		// Initialize Open Finance client and sync service
 		ofClient := openfinance.NewClient()
-		syncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, bankRepo)
+		syncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
 
 		// Create job provider function
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {

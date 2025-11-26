@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"parsa/internal/database"
@@ -20,6 +19,7 @@ func NewAccountHandler(accountRepo *database.AccountRepository) *AccountHandler 
 }
 
 type CreateAccountRequest struct {
+	ID          string  `json:"id"` // Optional: provider's account ID
 	Name        string  `json:"name"`
 	AccountType string  `json:"accountType"`
 	Currency    string  `json:"currency"`
@@ -73,11 +73,17 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if req.ID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
+		return
+	}
+
 	if req.Currency == "" {
-		req.Currency = "USD"
+		req.Currency = "BRL"
 	}
 
 	account, err := h.accountRepo.Create(r.Context(), models.CreateAccountParams{
+		ID:          req.ID,
 		UserID:      userID,
 		Name:        req.Name,
 		AccountType: req.AccountType,
@@ -108,16 +114,10 @@ func (h *AccountHandler) HandleGetAccount(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Extract account ID from URL path
-	accountIDStr := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
-	if accountIDStr == "" {
+	// Extract account ID from URL path (now a string UUID)
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
-		return
-	}
-
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid account ID", http.StatusBadRequest)
 		return
 	}
 
@@ -150,15 +150,10 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	accountIDStr := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
-	if accountIDStr == "" {
+	// Extract account ID from URL path (now a string UUID)
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
-		return
-	}
-
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid account ID", http.StatusBadRequest)
 		return
 	}
 

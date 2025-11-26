@@ -64,7 +64,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id int64) (*models.
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID int64, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*models.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, created_at, updated_at
 		FROM transactions
