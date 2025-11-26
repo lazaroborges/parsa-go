@@ -16,7 +16,7 @@ type User struct {
 	AvatarURL     *string   `json:"avatarUrl,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
-	ProviderKey   string    `json:"providerKey"`
+	ProviderKey   string    `json:"-"`
 }
 
 type CreateUserParams struct {

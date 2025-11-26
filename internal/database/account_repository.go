@@ -319,7 +319,10 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // Not found
+		// Intentionally returns (nil, nil) instead of an error.
+		// This allows callers to distinguish "no match" from actual errors,
+		// e.g., transaction_sync skips transactions when no matching account exists.
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to find account by match: %w", err)

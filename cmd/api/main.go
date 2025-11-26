@@ -105,23 +105,18 @@ func run() error {
 		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
 		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
 
-		// Create job provider function that creates both account and transaction sync jobs
+		// Create job provider function that creates composite sync jobs per user
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
 			users, err := userRepo.ListUsersWithProviderKey(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			// Create jobs: first sync accounts, then sync transactions for each user
-			jobs := make([]scheduler.Job, 0, len(users)*2)
+			// Create one composite job per user that runs account sync then transaction sync
+			jobs := make([]scheduler.Job, 0, len(users))
 			for _, user := range users {
-				// Account sync job first
-				accountJob := openfinance.NewAccountSyncJob(user.ID, accountSyncService)
-				jobs = append(jobs, accountJob)
-
-				// Transaction sync job second (depends on accounts being synced)
-				transactionJob := openfinance.NewTransactionSyncJob(user.ID, transactionSyncService)
-				jobs = append(jobs, transactionJob)
+				job := openfinance.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
+				jobs = append(jobs, job)
 			}
 
 			log.Printf("Job provider: Created %d sync jobs (%d users)", len(jobs), len(users))

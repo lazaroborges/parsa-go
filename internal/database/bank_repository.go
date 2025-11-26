@@ -20,23 +20,23 @@ func NewBankRepository(db *DB) *BankRepository {
 func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, connector string) (*models.Bank, error) {
 	// Try to find existing bank by connector
 	query := `
-		SELECT id, name, connector
+		SELECT id, name, ui_name, connector
 		FROM banks
 		WHERE connector = $1
 	`
 
 	var bank models.Bank
+	var uiName sql.NullString
 	err := r.db.QueryRowContext(ctx, query, connector).Scan(
-		&bank.ID, &bank.Name, &bank.Connector,
+		&bank.ID, &bank.Name, &uiName, &bank.Connector,
 	)
 
 	if err == nil {
-		// Bank found, return it
+		bank.UIName = uiName.String
 		return &bank, nil
 	}
 
 	if err != sql.ErrNoRows {
-		// Unexpected error
 		return nil, fmt.Errorf("failed to query bank: %w", err)
 	}
 
@@ -44,35 +44,37 @@ func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, conn
 	insertQuery := `
 		INSERT INTO banks (name, connector)
 		VALUES ($1, $2)
-		RETURNING id, name, connector
+		RETURNING id, name, ui_name, connector
 	`
 
 	err = r.db.QueryRowContext(ctx, insertQuery, name, connector).Scan(
-		&bank.ID, &bank.Name, &bank.Connector,
+		&bank.ID, &bank.Name, &uiName, &bank.Connector,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bank: %w", err)
 	}
 
+	bank.UIName = uiName.String
 	return &bank, nil
 }
 
 // FindOrCreateByName finds a bank by name or creates it if it doesn't exist
 func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*models.Bank, error) {
 	query := `
-		SELECT id, name, connector
+		SELECT id, name, ui_name, connector
 		FROM banks
 		WHERE name = $1
 	`
 
 	var bank models.Bank
-	var connector sql.NullString
+	var uiName, connector sql.NullString
 	err := r.db.QueryRowContext(ctx, query, name).Scan(
-		&bank.ID, &bank.Name, &connector,
+		&bank.ID, &bank.Name, &uiName, &connector,
 	)
 
 	if err == nil {
+		bank.UIName = uiName.String
 		bank.Connector = connector.String
 		return &bank, nil
 	}
@@ -85,17 +87,18 @@ func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*
 	insertQuery := `
 		INSERT INTO banks (name)
 		VALUES ($1)
-		RETURNING id, name, connector
+		RETURNING id, name, ui_name, connector
 	`
 
 	err = r.db.QueryRowContext(ctx, insertQuery, name).Scan(
-		&bank.ID, &bank.Name, &connector,
+		&bank.ID, &bank.Name, &uiName, &connector,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bank: %w", err)
 	}
 
+	bank.UIName = uiName.String
 	bank.Connector = connector.String
 	return &bank, nil
 }
@@ -103,14 +106,15 @@ func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*
 // GetByID retrieves a bank by its ID
 func (r *BankRepository) GetByID(ctx context.Context, id int64) (*models.Bank, error) {
 	query := `
-		SELECT id, name, connector
+		SELECT id, name, ui_name, connector
 		FROM banks
 		WHERE id = $1
 	`
 
 	var bank models.Bank
+	var uiName, connector sql.NullString
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&bank.ID, &bank.Name, &bank.Connector,
+		&bank.ID, &bank.Name, &uiName, &connector,
 	)
 
 	if err == sql.ErrNoRows {
@@ -120,13 +124,15 @@ func (r *BankRepository) GetByID(ctx context.Context, id int64) (*models.Bank, e
 		return nil, fmt.Errorf("failed to get bank: %w", err)
 	}
 
+	bank.UIName = uiName.String
+	bank.Connector = connector.String
 	return &bank, nil
 }
 
 // List retrieves all banks
 func (r *BankRepository) List(ctx context.Context) ([]*models.Bank, error) {
 	query := `
-		SELECT id, name, connector
+		SELECT id, name, ui_name, connector
 		FROM banks
 		ORDER BY name
 	`
@@ -140,10 +146,13 @@ func (r *BankRepository) List(ctx context.Context) ([]*models.Bank, error) {
 	var banks []*models.Bank
 	for rows.Next() {
 		var bank models.Bank
-		err := rows.Scan(&bank.ID, &bank.Name, &bank.Connector)
+		var uiName, connector sql.NullString
+		err := rows.Scan(&bank.ID, &bank.Name, &uiName, &connector)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan bank: %w", err)
 		}
+		bank.UIName = uiName.String
+		bank.Connector = connector.String
 		banks = append(banks, &bank)
 	}
 
