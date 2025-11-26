@@ -25,7 +25,7 @@ func NewTransactionHandler(transactionRepo *database.TransactionRepository, acco
 }
 
 type CreateTransactionRequest struct {
-	AccountID       int64   `json:"accountId"`
+	AccountID       string  `json:"accountId"` // Now a string (UUID)
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
 	Category        *string `json:"category,omitempty"`
@@ -45,15 +45,9 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	accountIDStr := r.URL.Query().Get("accountId")
-	if accountIDStr == "" {
+	accountID := r.URL.Query().Get("accountId")
+	if accountID == "" {
 		http.Error(w, "accountId is required", http.StatusBadRequest)
-		return
-	}
-
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid accountId", http.StatusBadRequest)
 		return
 	}
 
@@ -114,7 +108,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	if req.AccountID == 0 || req.Description == "" || req.TransactionDate == "" {
+	if req.AccountID == "" || req.Description == "" || req.TransactionDate == "" {
 		http.Error(w, "accountId, description, and transactionDate are required", http.StatusBadRequest)
 		return
 	}

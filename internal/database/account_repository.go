@@ -18,17 +18,19 @@ func NewAccountRepository(db *DB) *AccountRepository {
 
 func (r *AccountRepository) Create(ctx context.Context, params models.CreateAccountParams) (*models.Account, error) {
 	query := `
-		INSERT INTO accounts (user_id, name, account_type, currency, balance)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, user_id, name, account_type, currency, balance, created_at, updated_at
+		INSERT INTO accounts (id, user_id, item_id, name, account_type, currency, balance)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, user_id, item_id, name, account_type, currency, balance, created_at, updated_at
 	`
 
 	var account models.Account
+	var itemID sql.NullString
+
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.UserID, params.Name, params.AccountType, params.Currency, params.Balance,
+		params.ID, params.UserID, nullString(params.ItemID), params.Name, params.AccountType, params.Currency, params.Balance,
 	).Scan(
-		&account.ID, &account.UserID, &account.Name,
+		&account.ID, &account.UserID, &itemID, &account.Name,
 		&account.AccountType, &account.Currency, &account.Balance,
 		&account.CreatedAt, &account.UpdatedAt,
 	)
@@ -37,20 +39,30 @@ func (r *AccountRepository) Create(ctx context.Context, params models.CreateAcco
 		return nil, fmt.Errorf("failed to create account: %w", err)
 	}
 
+	if itemID.Valid {
+		account.ItemID = itemID.String
+	}
+
 	return &account, nil
 }
 
-func (r *AccountRepository) GetByID(ctx context.Context, id int64) (*models.Account, error) {
+func (r *AccountRepository) GetByID(ctx context.Context, id string) (*models.Account, error) {
 	query := `
-		SELECT id, user_id, name, account_type, currency, balance, created_at, updated_at
+		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		       provider_updated_at, provider_created_at, created_at, updated_at
 		FROM accounts
 		WHERE id = $1
 	`
 
 	var account models.Account
+	var itemID, subtype sql.NullString
+	var bankID sql.NullInt64
+	var providerUpdatedAt, providerCreatedAt sql.NullTime
+
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&account.ID, &account.UserID, &account.Name,
-		&account.AccountType, &account.Currency, &account.Balance,
+		&account.ID, &account.UserID, &itemID, &account.Name,
+		&account.AccountType, &subtype, &account.Currency, &account.Balance,
+		&bankID, &providerUpdatedAt, &providerCreatedAt,
 		&account.CreatedAt, &account.UpdatedAt,
 	)
 
@@ -61,12 +73,29 @@ func (r *AccountRepository) GetByID(ctx context.Context, id int64) (*models.Acco
 		return nil, fmt.Errorf("failed to get account: %w", err)
 	}
 
+	if itemID.Valid {
+		account.ItemID = itemID.String
+	}
+	if subtype.Valid {
+		account.Subtype = subtype.String
+	}
+	if bankID.Valid {
+		account.BankID = bankID.Int64
+	}
+	if providerUpdatedAt.Valid {
+		account.ProviderUpdatedAt = providerUpdatedAt.Time
+	}
+	if providerCreatedAt.Valid {
+		account.ProviderCreatedAt = providerCreatedAt.Time
+	}
+
 	return &account, nil
 }
 
 func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*models.Account, error) {
 	query := `
-		SELECT id, user_id, name, account_type, currency, balance, created_at, updated_at
+		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		       provider_updated_at, provider_created_at, created_at, updated_at
 		FROM accounts
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -81,14 +110,36 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*
 	var accounts []*models.Account
 	for rows.Next() {
 		var account models.Account
+		var itemID, subtype sql.NullString
+		var bankID sql.NullInt64
+		var providerUpdatedAt, providerCreatedAt sql.NullTime
+
 		err := rows.Scan(
-			&account.ID, &account.UserID, &account.Name,
-			&account.AccountType, &account.Currency, &account.Balance,
+			&account.ID, &account.UserID, &itemID, &account.Name,
+			&account.AccountType, &subtype, &account.Currency, &account.Balance,
+			&bankID, &providerUpdatedAt, &providerCreatedAt,
 			&account.CreatedAt, &account.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan account: %w", err)
 		}
+
+		if itemID.Valid {
+			account.ItemID = itemID.String
+		}
+		if subtype.Valid {
+			account.Subtype = subtype.String
+		}
+		if bankID.Valid {
+			account.BankID = bankID.Int64
+		}
+		if providerUpdatedAt.Valid {
+			account.ProviderUpdatedAt = providerUpdatedAt.Time
+		}
+		if providerCreatedAt.Valid {
+			account.ProviderCreatedAt = providerCreatedAt.Time
+		}
+
 		accounts = append(accounts, &account)
 	}
 
@@ -99,7 +150,7 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*
 	return accounts, nil
 }
 
-func (r *AccountRepository) UpdateBalance(ctx context.Context, id int64, balance float64) error {
+func (r *AccountRepository) UpdateBalance(ctx context.Context, id string, balance float64) error {
 	query := `
 		UPDATE accounts
 		SET balance = $1, updated_at = CURRENT_TIMESTAMP
@@ -123,7 +174,7 @@ func (r *AccountRepository) UpdateBalance(ctx context.Context, id int64, balance
 	return nil
 }
 
-func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
+func (r *AccountRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM accounts WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
@@ -143,67 +194,19 @@ func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// GetByProviderID retrieves an account by its provider ID and user ID
-func (r *AccountRepository) GetByProviderID(ctx context.Context, userID int64, providerID string) (*models.Account, error) {
-	query := `
-		SELECT id, user_id, name, account_type, subtype, currency, balance, bank_id,
-		       provider_id, provider_updated_at, provider_created_at, created_at, updated_at
-		FROM accounts
-		WHERE user_id = $1 AND provider_id = $2
-	`
-
-	var account models.Account
-	var bankID sql.NullInt64
-	var subtype, providerIDVal sql.NullString
-	var providerUpdatedAt, providerCreatedAt sql.NullTime
-
-	err := r.db.QueryRowContext(ctx, query, userID, providerID).Scan(
-		&account.ID, &account.UserID, &account.Name,
-		&account.AccountType, &subtype, &account.Currency, &account.Balance,
-		&bankID, &providerIDVal, &providerUpdatedAt, &providerCreatedAt,
-		&account.CreatedAt, &account.UpdatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("account not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get account: %w", err)
-	}
-
-	if bankID.Valid {
-		account.BankID = bankID.Int64
-	}
-	if subtype.Valid {
-		account.Subtype = subtype.String
-	}
-	if providerIDVal.Valid {
-		account.ProviderID = providerIDVal.String
-	}
-	if providerUpdatedAt.Valid {
-		account.ProviderUpdatedAt = providerUpdatedAt.Time
-	}
-	if providerCreatedAt.Valid {
-		account.ProviderCreatedAt = providerCreatedAt.Time
-	}
-
-	return &account, nil
-}
-
-// UpsertByProviderID creates or updates an account based on provider_id
-func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params models.UpsertAccountParams) (*models.Account, error) {
-	// Validate that provider_id is not empty (required for upsert)
-	if params.ProviderID == "" {
-		return nil, fmt.Errorf("provider_id is required for upsert")
+// Upsert creates or updates an account based on its ID (provider's account id)
+func (r *AccountRepository) Upsert(ctx context.Context, params models.UpsertAccountParams) (*models.Account, error) {
+	if params.ID == "" {
+		return nil, fmt.Errorf("account ID is required for upsert")
 	}
 
 	query := `
 		INSERT INTO accounts (
-			user_id, name, account_type, subtype, currency, balance, bank_id,
-			provider_id, provider_updated_at, provider_created_at
+			id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+			provider_updated_at, provider_created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (user_id, provider_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (id)
 		DO UPDATE SET
 			name = EXCLUDED.name,
 			account_type = EXCLUDED.account_type,
@@ -211,15 +214,16 @@ func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params model
 			currency = EXCLUDED.currency,
 			balance = EXCLUDED.balance,
 			bank_id = EXCLUDED.bank_id,
+			item_id = EXCLUDED.item_id,
 			provider_updated_at = EXCLUDED.provider_updated_at,
 			updated_at = CURRENT_TIMESTAMP
-		RETURNING id, user_id, name, account_type, subtype, currency, balance, bank_id,
-		          provider_id, provider_updated_at, provider_created_at, created_at, updated_at
+		RETURNING id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		          provider_updated_at, provider_created_at, created_at, updated_at
 	`
 
 	var account models.Account
+	var itemIDOut, subtypeOut sql.NullString
 	var bankIDOut sql.NullInt64
-	var subtypeOut, providerIDOut sql.NullString
 	var providerUpdatedAtOut, providerCreatedAtOut sql.NullTime
 
 	// Convert nullable fields for insert
@@ -233,17 +237,11 @@ func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params model
 		subtypeIn.String = *params.Subtype
 		subtypeIn.Valid = true
 	}
-	var providerIDIn sql.NullString
-	if params.ProviderID != "" {
-		providerIDIn.String = params.ProviderID
-		providerIDIn.Valid = true
-	}
 	var providerUpdatedAtIn, providerCreatedAtIn sql.NullTime
 	if params.ProviderUpdatedAt != nil {
 		providerUpdatedAtIn.Time = *params.ProviderUpdatedAt
 		providerUpdatedAtIn.Valid = true
 	}
-
 	if params.ProviderCreatedAt != nil {
 		providerCreatedAtIn.Time = *params.ProviderCreatedAt
 		providerCreatedAtIn.Valid = true
@@ -251,12 +249,13 @@ func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params model
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.UserID, params.Name, params.AccountType, subtypeIn, params.Currency,
-		params.Balance, bankIDIn, providerIDIn, providerUpdatedAtIn, providerCreatedAtIn,
+		params.ID, params.UserID, nullString(params.ItemID), params.Name, params.AccountType,
+		subtypeIn, params.Currency, params.Balance, bankIDIn,
+		providerUpdatedAtIn, providerCreatedAtIn,
 	).Scan(
-		&account.ID, &account.UserID, &account.Name,
+		&account.ID, &account.UserID, &itemIDOut, &account.Name,
 		&account.AccountType, &subtypeOut, &account.Currency, &account.Balance,
-		&bankIDOut, &providerIDOut, &providerUpdatedAtOut, &providerCreatedAtOut,
+		&bankIDOut, &providerUpdatedAtOut, &providerCreatedAtOut,
 		&account.CreatedAt, &account.UpdatedAt,
 	)
 
@@ -264,14 +263,14 @@ func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params model
 		return nil, fmt.Errorf("failed to upsert account: %w", err)
 	}
 
-	if bankIDOut.Valid {
-		account.BankID = bankIDOut.Int64
+	if itemIDOut.Valid {
+		account.ItemID = itemIDOut.String
 	}
 	if subtypeOut.Valid {
 		account.Subtype = subtypeOut.String
 	}
-	if providerIDOut.Valid {
-		account.ProviderID = providerIDOut.String
+	if bankIDOut.Valid {
+		account.BankID = bankIDOut.Int64
 	}
 	if providerUpdatedAtOut.Valid {
 		account.ProviderUpdatedAt = providerUpdatedAtOut.Time
@@ -281,4 +280,25 @@ func (r *AccountRepository) UpsertByProviderID(ctx context.Context, params model
 	}
 
 	return &account, nil
+}
+
+// Exists checks if an account with the given ID exists
+func (r *AccountRepository) Exists(ctx context.Context, id string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1)`
+
+	var exists bool
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check account existence: %w", err)
+	}
+
+	return exists, nil
+}
+
+// nullString converts a string to sql.NullString (empty string = NULL)
+func nullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
 }

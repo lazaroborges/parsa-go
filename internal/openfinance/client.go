@@ -44,6 +44,7 @@ type AccountResponse struct {
 // Account represents an account from the Open Finance API
 type Account struct {
 	AccountID            string      `json:"id"`
+	ItemID               string      `json:"itemId"` // Identifies the bank connection/relationship
 	ProviderCode         string      `json:"providerCode"`
 	AccountName          string      `json:"name"`
 	AccountType          string      `json:"type"`

@@ -23,7 +23,7 @@ type AccountSyncService struct {
 	client      *Client
 	userRepo    *database.UserRepository
 	accountRepo *database.AccountRepository
-	bankRepo    *database.BankRepository
+	itemRepo    *database.ItemRepository
 }
 
 // NewAccountSyncService creates a new account sync service
@@ -31,13 +31,13 @@ func NewAccountSyncService(
 	client *Client,
 	userRepo *database.UserRepository,
 	accountRepo *database.AccountRepository,
-	bankRepo *database.BankRepository,
+	itemRepo *database.ItemRepository,
 ) *AccountSyncService {
 	return &AccountSyncService{
 		client:      client,
 		userRepo:    userRepo,
 		accountRepo: accountRepo,
-		bankRepo:    bankRepo,
+		itemRepo:    itemRepo,
 	}
 }
 
@@ -100,27 +100,32 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 		return fmt.Errorf("failed to parse updatedAt: %w", err)
 	}
 
-	// Find or create bank using the 'name' field from API response
-	var bankID *int64
-	if apiAccount.AccountName != "" {
-		// Use the account name as both bank name and connector
-		// The connector will be the unique identifier for the bank
-		bank, err := s.bankRepo.FindOrCreateByConnector(ctx, apiAccount.AccountName, apiAccount.AccountName)
+	// Find or create Item for this bank connection
+	var itemID string
+	if apiAccount.ItemID != "" {
+		item, err := s.itemRepo.FindOrCreate(ctx, apiAccount.ItemID, userID)
 		if err != nil {
-			return fmt.Errorf("failed to find/create bank: %w", err)
+			return fmt.Errorf("failed to find/create item: %w", err)
 		}
-		bankID = &bank.ID
+		itemID = item.ID
+		log.Printf("User %d: Using item %s for account %s", userID, itemID, apiAccount.AccountID)
+	}
+
+	// Check if account exists to determine if this is create or update
+	exists, err := s.accountRepo.Exists(ctx, apiAccount.AccountID)
+	if err != nil {
+		return fmt.Errorf("failed to check account existence: %w", err)
 	}
 
 	// Prepare upsert parameters
 	params := models.UpsertAccountParams{
+		ID:                apiAccount.AccountID,
 		UserID:            userID,
+		ItemID:            itemID,
 		Name:              apiAccount.AccountName,
 		AccountType:       apiAccount.AccountType,
 		Currency:          apiAccount.AccountCurrencyCode,
 		Balance:           balance,
-		BankID:            bankID,
-		ProviderID:        apiAccount.AccountID,
 		ProviderCreatedAt: createdAt,
 		ProviderUpdatedAt: updatedAt,
 	}
@@ -130,17 +135,13 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 		params.Subtype = &apiAccount.AccountSubtype
 	}
 
-	// Check if account exists to determine if this is create or update
-	existingAccount, err := s.accountRepo.GetByProviderID(ctx, userID, apiAccount.AccountID)
-	isUpdate := err == nil && existingAccount != nil
-
 	// Upsert the account
-	_, err = s.accountRepo.UpsertByProviderID(ctx, params)
+	_, err = s.accountRepo.Upsert(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to upsert account: %w", err)
 	}
 
-	if isUpdate {
+	if exists {
 		result.Updated++
 		log.Printf("User %d: Updated account %s (%s)", userID, apiAccount.AccountName, apiAccount.AccountID)
 	} else {
