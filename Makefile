@@ -23,7 +23,7 @@ migrate-down:
 
 # Create database
 db-create:
-	createdb -O $(DB_USER) $(DB_NAME)
+	createdb -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -O $(DB_USER) $(DB_NAME)
 
 # Drop database (terminates active connections first)
 db-drop:
