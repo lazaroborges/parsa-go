@@ -10,13 +10,11 @@ var (
 		"BANK":       {},
 		"CREDIT":     {},
 		"INVESTMENT": {},
-		"LOAN":       {},
 	}
 	accountSubtypes = map[string]struct{}{
 		"CHECKING_ACCOUNT": {},
 		"SAVINGS_ACCOUNT":  {},
 		"CREDIT_CARD":      {},
-		"PAYMENT_ACCOUNT":  {},
 	}
 )
 
@@ -46,6 +44,7 @@ type Account struct {
 	ProviderID        string    `json:"providerId"`
 	ProviderUpdatedAt time.Time `json:"providerUpdatedAt"`
 	ProviderCreatedAt time.Time `json:"providerCreatedAt"`
+	ItemID            string    `json:"itemId"`
 }
 
 type CreateAccountParams struct {
@@ -55,6 +54,7 @@ type CreateAccountParams struct {
 	Currency    string
 	Balance     float64
 	BankID      int64
+	ItemID      string
 }
 
 type UpdateAccountParams struct {
@@ -74,4 +74,5 @@ type UpsertAccountParams struct {
 	ProviderID        string
 	ProviderUpdatedAt *time.Time
 	ProviderCreatedAt *time.Time
+	ItemID            *string
 }
