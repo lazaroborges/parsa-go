@@ -213,7 +213,6 @@ func (r *AccountRepository) Upsert(ctx context.Context, params models.UpsertAcco
 			subtype = EXCLUDED.subtype,
 			currency = EXCLUDED.currency,
 			balance = EXCLUDED.balance,
-			bank_id = COALESCE(accounts.bank_id, EXCLUDED.bank_id),
 			item_id = EXCLUDED.item_id,
 			provider_updated_at = EXCLUDED.provider_updated_at,
 			updated_at = CURRENT_TIMESTAMP
