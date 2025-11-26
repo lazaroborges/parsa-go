@@ -54,4 +54,3 @@ func (j *AccountSyncJob) UserID() string {
 func (j *AccountSyncJob) Description() string {
 	return fmt.Sprintf("Account sync for user %d", j.userID)
 }
-
