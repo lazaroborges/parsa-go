@@ -9,6 +9,7 @@ CLAUDE.md
 transactions.json
 accounts.json
 openfinanceproviderapi.json
+todos.txt
 
 # Environment files
 .env
