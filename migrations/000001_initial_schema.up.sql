@@ -81,12 +81,14 @@ CREATE TABLE transactions (
     description TEXT NOT NULL,
     category VARCHAR(100),
     transaction_date TIMESTAMP WITH TIME ZONE NOT NULL,  -- Full timestamp from API
-    type VARCHAR(20) NOT NULL DEFAULT 'DEBIT',  -- DEBIT or CREDIT
-    status VARCHAR(20) NOT NULL DEFAULT 'POSTED',  -- PENDING, POSTED
+    type VARCHAR(20) NOT NULL DEFAULT 'DEBIT',
+    status VARCHAR(20) NOT NULL DEFAULT 'POSTED',
     provider_created_at TIMESTAMP WITH TIME ZONE, -- NULL for now. 
     provider_updated_at TIMESTAMP WITH TIME ZONE, -- NULL for now.
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_transactions_type CHECK (type IN ('DEBIT', 'CREDIT')),
+    CONSTRAINT check_transactions_status CHECK (status IN ('PENDING', 'POSTED'))
 );
 
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);

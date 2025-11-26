@@ -58,7 +58,7 @@ func (r *CreditCardDataRepository) GetByTransactionID(ctx context.Context, trans
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, fmt.Errorf("credit card data not found for transaction %s", transactionID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credit card data: %w", err)
@@ -78,4 +78,3 @@ func (r *CreditCardDataRepository) Delete(ctx context.Context, transactionID str
 
 	return nil
 }
-

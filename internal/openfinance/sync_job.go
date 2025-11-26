@@ -55,6 +55,50 @@ func (j *AccountSyncJob) Description() string {
 	return fmt.Sprintf("Account sync for user %d", j.userID)
 }
 
+// UserSyncJob is a composite job that runs account sync followed by transaction sync.
+// This ensures accounts are synced before transactions, avoiding race conditions.
+type UserSyncJob struct {
+	userID             int64
+	accountSyncService *AccountSyncService
+	txSyncService      *TransactionSyncService
+}
+
+// NewUserSyncJob creates a new composite sync job for a user
+func NewUserSyncJob(userID int64, accountSyncService *AccountSyncService, txSyncService *TransactionSyncService) *UserSyncJob {
+	return &UserSyncJob{
+		userID:             userID,
+		accountSyncService: accountSyncService,
+		txSyncService:      txSyncService,
+	}
+}
+
+// Execute runs account sync first, then transaction sync on success
+func (j *UserSyncJob) Execute(ctx context.Context) error {
+	// Run account sync first
+	accountJob := NewAccountSyncJob(j.userID, j.accountSyncService)
+	if err := accountJob.Execute(ctx); err != nil {
+		return fmt.Errorf("account sync failed, skipping transaction sync: %w", err)
+	}
+
+	// Only run transaction sync if account sync succeeded
+	txJob := NewTransactionSyncJob(j.userID, j.txSyncService)
+	if err := txJob.Execute(ctx); err != nil {
+		return fmt.Errorf("transaction sync failed: %w", err)
+	}
+
+	return nil
+}
+
+// UserID returns the user ID associated with this job
+func (j *UserSyncJob) UserID() string {
+	return strconv.FormatInt(j.userID, 10)
+}
+
+// Description returns a human-readable description of the job
+func (j *UserSyncJob) Description() string {
+	return fmt.Sprintf("Full sync (accounts + transactions) for user %d", j.userID)
+}
+
 // TransactionSyncJob implements the scheduler.Job interface for syncing user transactions
 type TransactionSyncJob struct {
 	userID      int64
