@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"parsa/internal/models"
@@ -16,30 +15,14 @@ func NewItemRepository(db *DB) *ItemRepository {
 	return &ItemRepository{db: db}
 }
 
-// GetByID retrieves an item by its ID
-func (r *ItemRepository) GetByID(ctx context.Context, id string) (*models.Item, error) {
-	query := `
-		SELECT id, user_id, created_at, updated_at
-		FROM items
-		WHERE id = $1
-	`
-
-	var item models.Item
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&item.ID, &item.UserID, &item.CreatedAt, &item.UpdatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil // Not found, return nil without error
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get item: %w", err)
-	}
-
-	return &item, nil
-}
-
-// FindOrCreate finds an existing item or creates a new one
+// FindOrCreate performs an upsert on the items table.
+// The items.id column is globally unique (PRIMARY KEY constraint in schema).
+// On conflict (id already exists):
+//   - The existing row's user_id is preserved (NOT updated from the incoming userID parameter)
+//   - Only updated_at is refreshed to CURRENT_TIMESTAMP
+//
+// This means the userID parameter is only used for initial insertion;
+// subsequent calls with the same id but different userID will NOT change ownership.
 func (r *ItemRepository) FindOrCreate(ctx context.Context, id string, userID int64) (*models.Item, error) {
 	// Try to insert, on conflict do nothing and return existing
 	query := `
