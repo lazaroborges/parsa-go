@@ -19,7 +19,7 @@ func NewAccountHandler(accountRepo *database.AccountRepository) *AccountHandler 
 }
 
 type CreateAccountRequest struct {
-	ID          string  `json:"id"` // Optional: provider's account ID
+	ID          string  `json:"id"` // Required: provider's account ID
 	Name        string  `json:"name"`
 	AccountType string  `json:"accountType"`
 	Currency    string  `json:"currency"`
