@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -106,7 +107,8 @@ func (wp *WorkerPool) processJob(workerID int, job Job) {
 }
 
 // Submit adds a job to the queue for processing.
-// Returns an error if the context is cancelled or the queue is full.
+// Returns an error if the context is cancelled.
+// Returns ErrQueueFull if the queue is full (job is dropped).
 // Non-blocking: uses select to respect context cancellation.
 func (wp *WorkerPool) Submit(job Job) error {
 	select {
@@ -117,7 +119,7 @@ func (wp *WorkerPool) Submit(job Job) error {
 	default:
 		// Queue is full - could also block here, but we return error for visibility
 		log.Printf("Warning: Job queue full, dropping job for user %s", job.UserID())
-		return nil
+		return fmt.Errorf("job queue full, dropping job for user %s", job.UserID())
 	}
 }
 

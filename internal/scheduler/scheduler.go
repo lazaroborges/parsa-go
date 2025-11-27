@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 )
@@ -71,6 +72,14 @@ func NewScheduler(config SchedulerConfig) (*Scheduler, error) {
 		}
 		scheduleTimes = append(scheduleTimes, st)
 	}
+
+	// Sort schedule times chronologically so GetNextScheduledTime works correctly
+	sort.Slice(scheduleTimes, func(i, j int) bool {
+		if scheduleTimes[i].Hour != scheduleTimes[j].Hour {
+			return scheduleTimes[i].Hour < scheduleTimes[j].Hour
+		}
+		return scheduleTimes[i].Minute < scheduleTimes[j].Minute
+	})
 
 	if len(scheduleTimes) == 0 {
 		return nil, fmt.Errorf("at least one schedule time is required")
@@ -214,7 +223,11 @@ func (s *Scheduler) Shutdown(timeout time.Duration) {
 // TriggerNow manually triggers a job run immediately.
 func (s *Scheduler) TriggerNow() {
 	log.Println("Scheduler: Manual trigger")
-	go s.runJobs()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.runJobs()
+	}()
 }
 
 // GetNextScheduledTime returns the next scheduled run time.
