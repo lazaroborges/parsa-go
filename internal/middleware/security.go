@@ -26,6 +26,7 @@ func SecureCookies(next http.Handler) http.Handler {
 // secureCookieWriter wraps http.ResponseWriter to enforce secure cookie attributes
 type secureCookieWriter struct {
 	http.ResponseWriter
+	wroteHeader bool
 }
 
 // Header intercepts header writes to modify Set-Cookie headers
@@ -33,8 +34,21 @@ func (w *secureCookieWriter) Header() http.Header {
 	return w.ResponseWriter.Header()
 }
 
+// Write ensures WriteHeader is called through the wrapper before writing response body
+func (w *secureCookieWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
 // WriteHeader intercepts header writes to add secure flags to cookies
 func (w *secureCookieWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+
 	// Process all Set-Cookie headers
 	cookies := w.ResponseWriter.Header()["Set-Cookie"]
 	if len(cookies) > 0 {
