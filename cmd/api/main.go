@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,7 +97,7 @@ func run() error {
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware
-	handler := middleware.Logging(middleware.CORS(mux))
+	handler := middleware.Logging(middleware.CORS(cfg.Server.AllowedHosts)(mux))
 
 	// Apply security middleware when TLS is enabled
 	if cfg.TLS.Enabled {
@@ -163,8 +164,26 @@ func run() error {
 	var redirectSrv *http.Server
 	if cfg.TLS.Enabled && cfg.TLS.RedirectHTTP {
 		redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Redirect to HTTPS with same host and request URI
-			httpsURL := "https://" + r.Host + r.RequestURI
+			// Get the host to redirect to (check X-Forwarded-Host for proxy support)
+			host := r.Header.Get("X-Forwarded-Host")
+			if host == "" {
+				host = r.Host
+			}
+
+			// Validate host against allowed hosts to prevent redirect poisoning
+			if !isHostAllowed(host, cfg.Server.AllowedHosts) {
+				http.Error(w, "Invalid host", http.StatusBadRequest)
+				return
+			}
+
+			// Strip port from host if present for cleaner redirect
+			canonicalHost := host
+			if idx := strings.Index(host, ":"); idx != -1 {
+				canonicalHost = host[:idx]
+			}
+
+			// Redirect to HTTPS with validated host and request URI
+			httpsURL := "https://" + canonicalHost + r.RequestURI
 			http.Redirect(w, r, httpsURL, http.StatusMovedPermanently)
 		})
 
@@ -246,4 +265,38 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/oauth-callback.html")
+}
+
+// isHostAllowed validates a host against the allowed hosts list
+func isHostAllowed(host string, allowedHosts []string) bool {
+	// If no allowed hosts configured, allow all (backwards compatible)
+	if len(allowedHosts) == 0 {
+		return true
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+
+	// Strip port from host for comparison
+	hostWithoutPort := host
+	if idx := strings.Index(host, ":"); idx != -1 {
+		hostWithoutPort = host[:idx]
+	}
+
+	// Check against each allowed host
+	for _, allowedHost := range allowedHosts {
+		allowedHost = strings.ToLower(strings.TrimSpace(allowedHost))
+
+		// Strip port from allowed host for comparison
+		allowedHostWithoutPort := allowedHost
+		if idx := strings.Index(allowedHost, ":"); idx != -1 {
+			allowedHostWithoutPort = allowedHost[:idx]
+		}
+
+		// Match with or without port
+		if host == allowedHost || hostWithoutPort == allowedHostWithoutPort {
+			return true
+		}
+	}
+
+	return false
 }
