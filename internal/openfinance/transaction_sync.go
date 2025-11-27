@@ -61,12 +61,12 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.ProviderKey == "" {
+	if user.ProviderKey == nil || *user.ProviderKey == "" {
 		return nil, fmt.Errorf("user has no provider API key configured")
 	}
 
 	// Fetch transactions from provider
-	txResp, err := s.client.GetTransactions(ctx, user.ProviderKey)
+	txResp, err := s.client.GetTransactions(ctx, *user.ProviderKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch transactions from provider: %w", err)
 	}
