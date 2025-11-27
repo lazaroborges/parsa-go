@@ -81,6 +81,7 @@ func run() error {
 	// Public API routes
 	mux.HandleFunc("/api/auth/register", authHandler.HandleRegister)
 	mux.HandleFunc("/api/auth/login", authHandler.HandleLogin)
+	mux.HandleFunc("/api/auth/logout", authHandler.HandleLogout)
 	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
 	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
 	mux.HandleFunc("/health", handleHealth)
