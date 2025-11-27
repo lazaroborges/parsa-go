@@ -92,7 +92,7 @@ func (wp *WorkerPool) processJob(workerID int, job Job) {
 	log.Printf("Worker %d: Processing %s for user %s", workerID, job.Description(), job.UserID())
 
 	// Create a timeout context for the job execution
-	ctx, cancel := context.WithTimeout(wp.ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(wp.ctx, 120*time.Second)
 	defer cancel()
 
 	// Execute the job
