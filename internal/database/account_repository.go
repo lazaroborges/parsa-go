@@ -352,10 +352,21 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 // UpdateBankID updates the bank_id for an account
 func (r *AccountRepository) UpdateBankID(ctx context.Context, accountID string, bankID int64) error {
 	query := `UPDATE accounts SET bank_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
-	_, err := r.db.ExecContext(ctx, query, bankID, accountID)
+
+	result, err := r.db.ExecContext(ctx, query, bankID, accountID)
 	if err != nil {
 		return fmt.Errorf("failed to update account bank_id: %w", err)
 	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("account not found")
+	}
+
 	return nil
 }
 
