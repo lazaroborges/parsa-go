@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Configuration for parsa-go - Personal Finance Management API
+language: "en-US"
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  auto_title_instructions: "Generate a concise, descriptive PR title that summarizes the main changes. Use imperative mood (e.g., 'Add feature', 'Fix bug', 'Update component'). Keep it under 60 characters when possible."
+  path_filters:
+    # Build artifacts and binaries
+    - "!bin/**"
+    - "!tmp/**"
+    - "!main"
+    - "!api"
+    
+    # Data/config files that shouldn't trigger reviews
+    - "!*.json"
+    - "!.env*"
+    - "!air.toml"
+    
+    # Documentation (optional - remove if you want docs reviewed)
+    - "!**/*.md"
+    - "!**/*.MD"
+    
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_title_keywords:
+      - "wip"
+      - "draft"
+      - "do not merge"
+      
+  tools:
+    # Go-specific linting
+    golangci-lint:
+      enabled: true
+    # Security scanning for secrets
+    gitleaks:
+      enabled: true
+      
+chat:
+  auto_reply: true
+  
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/CLAUDE.md"
+      - "**/.cursorrules"
