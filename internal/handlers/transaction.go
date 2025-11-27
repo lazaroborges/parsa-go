@@ -171,12 +171,6 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Update account balance
-	newBalance := account.Balance + req.Amount
-	if err := h.accountRepo.UpdateBalance(r.Context(), req.AccountID, newBalance); err != nil {
-		log.Printf("Error updating balance for account %s after transaction: %v", req.AccountID, err)
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(transaction)
@@ -270,12 +264,6 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 	if account.UserID != userID {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
-	}
-
-	// Update account balance before deleting
-	newBalance := account.Balance - transaction.Amount
-	if err := h.accountRepo.UpdateBalance(r.Context(), transaction.AccountID, newBalance); err != nil {
-		log.Printf("Error updating balance for account %s before transaction deletion: %v", transaction.AccountID, err)
 	}
 
 	if err := h.transactionRepo.Delete(r.Context(), transactionID); err != nil {
