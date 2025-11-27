@@ -27,24 +27,21 @@
     </div>
 
     <script>
-        // Extract token and user data from URL hash
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const token = params.get('token');
+        // Extract user data from query params (token is in HttpOnly cookie)
+        const params = new URLSearchParams(window.location.search);
         const userData = params.get('user');
 
-        if (token && userData) {
+        if (userData) {
             try {
-                const user = JSON.parse(decodeURIComponent(userData));
-                localStorage.setItem('token', token);
+                const user = JSON.parse(userData);
                 localStorage.setItem('user', JSON.stringify(user));
                 window.location.href = '/dashboard';
             } catch (error) {
                 console.error('Error parsing user data:', error);
-                window.location.href = '/login?error=oauth_failed';
+                window.location.href = '/login?error=oauth_parse_failed';
             }
         } else {
-            window.location.href = '/login?error=oauth_failed';
+            window.location.href = '/login?error=oauth_no_user';
         }
     </script>
 </body>

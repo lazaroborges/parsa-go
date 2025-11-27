@@ -121,7 +121,10 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Encode user data as JSON for URL
+	// Set HttpOnly cookie with JWT
+	setAuthCookie(w, r, jwtToken)
+
+	// Encode user data as JSON for URL (token no longer needed in URL)
 	userJSON, err := json.Marshal(user)
 	if err != nil {
 		log.Printf("Error encoding user data for user %d: %v", user.ID, err)
@@ -129,9 +132,8 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect to callback page with token and user data in URL hash
-	redirectURL := fmt.Sprintf("/oauth-callback#token=%s&user=%s",
-		url.QueryEscape(jwtToken),
+	// Redirect to callback page with user data as query param (not hash - ngrok/proxies strip hashes)
+	redirectURL := fmt.Sprintf("/oauth-callback?user=%s",
 		url.QueryEscape(string(userJSON)))
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
@@ -203,6 +205,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookie(w, r, token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
@@ -257,11 +260,36 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookie(w, r, token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
 		User:  user,
 	})
+}
+
+// HandleLogout clears the auth cookie
+func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only set Secure flag when actually using HTTPS
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
+	// Clear the cookie by setting MaxAge to -1
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func generateState() (string, error) {
@@ -270,4 +298,20 @@ func generateState() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// setAuthCookie sets the JWT as an HttpOnly cookie
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	// Only set Secure flag when actually using HTTPS
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400, // 24 hours (matches JWT expiration)
+	})
 }
