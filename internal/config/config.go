@@ -19,8 +19,9 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port string
-	Host string
+	Port         string
+	Host         string
+	AllowedHosts []string
 }
 
 type DatabaseConfig struct {
@@ -96,10 +97,23 @@ func Load() (*Config, error) {
 	tlsKeyPath := getEnv("TLS_KEY_PATH", "")
 	tlsRedirectHTTP := getBoolEnv("TLS_REDIRECT_HTTP", false)
 
+	// Parse allowed hosts (comma-separated list)
+	allowedHostsStr := getEnv("ALLOWED_HOSTS", "")
+	var allowedHosts []string
+	if allowedHostsStr != "" {
+		for _, host := range strings.Split(allowedHostsStr, ",") {
+			host = strings.TrimSpace(host)
+			if host != "" {
+				allowedHosts = append(allowedHosts, host)
+			}
+		}
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
-			Port: getEnv("PORT", "8080"),
-			Host: getEnv("HOST", "0.0.0.0"),
+			Port:         getEnv("PORT", "8080"),
+			Host:         getEnv("HOST", "0.0.0.0"),
+			AllowedHosts: allowedHosts,
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
