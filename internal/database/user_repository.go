@@ -23,15 +23,16 @@ func NewUserRepository(db *DB, encryptor *crypto.Encryptor) *UserRepository {
 
 // decryptProviderKey decrypts the provider key if it exists
 func (r *UserRepository) decryptProviderKey(user *models.User) error {
-	if user.ProviderKey == "" {
+	if user.ProviderKey == nil || *user.ProviderKey == "" {
+
 		return nil
 	}
 
-	decrypted, err := r.encryptor.Decrypt(user.ProviderKey)
+	decrypted, err := r.encryptor.Decrypt(*user.ProviderKey)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt provider key: %w", err)
 	}
-	user.ProviderKey = decrypted
+	user.ProviderKey = &decrypted
 	return nil
 }
 

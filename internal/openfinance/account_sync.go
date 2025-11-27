@@ -54,12 +54,12 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 		return result, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.ProviderKey == "" {
+	if user.ProviderKey == nil || *user.ProviderKey == "" {
 		return result, fmt.Errorf("user has no provider key")
 	}
 
 	// Fetch accounts from Open Finance API
-	accountResp, err := s.client.GetAccounts(ctx, user.ProviderKey)
+	accountResp, err := s.client.GetAccounts(ctx, *user.ProviderKey)
 	if err != nil {
 		return result, fmt.Errorf("failed to fetch accounts from API: %w", err)
 	}
