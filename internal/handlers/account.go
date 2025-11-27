@@ -33,7 +33,7 @@ func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -56,7 +56,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
