@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -50,6 +51,7 @@ func (h *AuthHandler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 
 	state, err := generateState()
 	if err != nil {
+		log.Printf("Error generating OAuth state: %v", err)
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
@@ -114,6 +116,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT
 	jwtToken, err := h.jwt.Generate(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Error generating JWT for user %d: %v", user.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -121,6 +124,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Encode user data as JSON for URL
 	userJSON, err := json.Marshal(user)
 	if err != nil {
+		log.Printf("Error encoding user data for user %d: %v", user.ID, err)
 		http.Error(w, "Failed to encode user data", http.StatusInternalServerError)
 		return
 	}
@@ -175,6 +179,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Hash password
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
+		log.Printf("Error hashing password for email %s: %v", req.Email, err)
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
@@ -193,6 +198,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT
 	token, err := h.jwt.Generate(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Error generating JWT for new user %d: %v", user.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -246,6 +252,7 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT
 	token, err := h.jwt.Generate(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Error generating JWT for login user %d: %v", user.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}

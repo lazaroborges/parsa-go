@@ -15,6 +15,7 @@ type Config struct {
 	JWT        JWTConfig
 	Encryption EncryptionConfig
 	Scheduler  SchedulerConfig
+	TLS        TLSConfig
 }
 
 type ServerConfig struct {
@@ -58,6 +59,13 @@ type SchedulerConfig struct {
 	RunOnStartup  bool
 }
 
+type TLSConfig struct {
+	Enabled      bool
+	CertPath     string
+	KeyPath      string
+	RedirectHTTP bool
+}
+
 func Load() (*Config, error) {
 
 	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
@@ -81,6 +89,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SCHEDULER_QUEUE_SIZE: %w", err)
 	}
 	schedulerRunOnStartup := getBoolEnv("SCHEDULER_RUN_ON_STARTUP", false)
+
+	// Parse TLS configuration
+	tlsEnabled := getBoolEnv("TLS_ENABLED", false)
+	tlsCertPath := getEnv("TLS_CERT_PATH", "")
+	tlsKeyPath := getEnv("TLS_KEY_PATH", "")
+	tlsRedirectHTTP := getBoolEnv("TLS_REDIRECT_HTTP", false)
 
 	cfg := &Config{
 		Server: ServerConfig{
@@ -116,6 +130,12 @@ func Load() (*Config, error) {
 			QueueSize:     schedulerQueueSize,
 			RunOnStartup:  schedulerRunOnStartup,
 		},
+		TLS: TLSConfig{
+			Enabled:      tlsEnabled,
+			CertPath:     tlsCertPath,
+			KeyPath:      tlsKeyPath,
+			RedirectHTTP: tlsRedirectHTTP,
+		},
 	}
 
 	// Validate required fields
@@ -127,6 +147,16 @@ func Load() (*Config, error) {
 	}
 	if len(cfg.Encryption.Key) != 32 {
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256")
+	}
+
+	// Validate TLS configuration
+	if cfg.TLS.Enabled {
+		if cfg.TLS.CertPath == "" {
+			return nil, fmt.Errorf("TLS_CERT_PATH is required when TLS_ENABLED=true")
+		}
+		if cfg.TLS.KeyPath == "" {
+			return nil, fmt.Errorf("TLS_KEY_PATH is required when TLS_ENABLED=true")
+		}
 	}
 
 	return cfg, nil
