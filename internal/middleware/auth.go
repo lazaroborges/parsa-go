@@ -8,6 +8,13 @@ import (
 	"parsa/internal/auth"
 )
 
+type ContextKey string
+
+const (
+	UserIDKey ContextKey = "user_id"
+	EmailKey  ContextKey = "email"
+)
+
 func Auth(jwt *auth.JWT) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,8 +38,8 @@ func Auth(jwt *auth.JWT) func(http.Handler) http.Handler {
 			}
 
 			// Add user ID to request context
-			ctx := context.WithValue(r.Context(), "user_id", claims.UserID)
-			ctx = context.WithValue(ctx, "email", claims.Email)
+			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, EmailKey, claims.Email)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

@@ -11,7 +11,7 @@ import (
 )
 
 type JWTClaims struct {
-	UserID string `json:"user_id"`
+	UserID int64  `json:"userId"`
 	Email  string `json:"email"`
 	Exp    int64  `json:"exp"`
 	Iat    int64  `json:"iat"`
@@ -25,7 +25,7 @@ func NewJWT(secret string) *JWT {
 	return &JWT{secret: []byte(secret)}
 }
 
-func (j *JWT) Generate(userID, email string) (string, error) {
+func (j *JWT) Generate(userID int64, email string) (string, error) {
 	header := map[string]string{
 		"alg": "HS256",
 		"typ": "JWT",

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"parsa/internal/database"
+	"parsa/internal/middleware"
 	"parsa/internal/models"
 )
 
@@ -18,8 +19,9 @@ func NewAccountHandler(accountRepo *database.AccountRepository) *AccountHandler 
 }
 
 type CreateAccountRequest struct {
+	ID          string  `json:"id"` // Required: provider's account ID
 	Name        string  `json:"name"`
-	AccountType string  `json:"account_type"`
+	AccountType string  `json:"accountType"`
 	Currency    string  `json:"currency"`
 	Balance     float64 `json:"balance"`
 }
@@ -31,7 +33,7 @@ func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -54,7 +56,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -67,15 +69,21 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 	}
 
 	if req.Name == "" || req.AccountType == "" {
-		http.Error(w, "Name and account_type are required", http.StatusBadRequest)
+		http.Error(w, "Name and accountType are required", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
 	}
 
 	if req.Currency == "" {
-		req.Currency = "USD"
+		req.Currency = "BRL"
 	}
 
 	account, err := h.accountRepo.Create(r.Context(), models.CreateAccountParams{
+		ID:          req.ID,
 		UserID:      userID,
 		Name:        req.Name,
 		AccountType: req.AccountType,
@@ -100,14 +108,14 @@ func (h *AccountHandler) HandleGetAccount(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Extract account ID from URL path
-	accountID := strings.TrimPrefix(r.URL.Path, "/accounts/")
+	// Extract account ID from URL path (now a string UUID)
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
@@ -136,13 +144,14 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	accountID := strings.TrimPrefix(r.URL.Path, "/accounts/")
+	// Extract account ID from URL path (now a string UUID)
+	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return

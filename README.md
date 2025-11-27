@@ -1,6 +1,6 @@
 # Parsa - Personal Finance Management API
 
-A clean, production-ready RESTful API for personal finance management built with Go and PostgreSQL.
+A production-ready RESTful API for personal finance management built with Go and PostgreSQL. To go with Parsa-Go in Flutter.
 
 ## Features
 
@@ -99,7 +99,7 @@ sudo mv migrate /usr/local/bin/
 Run migrations:
 
 ```bash
-migrate -path migrations -database "postgres://postgres:yourpassword@localhost:5432/parsa?sslmode=disable" up
+migrate -path migrations -database "postgres://$DB_USER:$DB_PASSWORD$@localhost:5432/parsa?sslmode=disable" up
 ```
 
 ### 5. Run the Server
@@ -254,3 +254,9 @@ server {
 ## License
 
 MIT
+
+## TODO 
+- **OAuth Duplication**: Rebase every new user from different OAuth Providers to reference the same email 
+- **Authentication**: OAuth 2.0 (Google) with JWT token-based sessions
+- **Hash**: Hash account balances and transaction amounts 
+
