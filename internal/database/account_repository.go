@@ -199,6 +199,9 @@ func (r *AccountRepository) Upsert(ctx context.Context, params models.UpsertAcco
 	if params.ID == "" {
 		return nil, fmt.Errorf("account ID is required for upsert")
 	}
+	if params.UserID <= 0 {
+		return nil, fmt.Errorf("valid user ID is required for upsert")
+	}
 
 	query := `
 		INSERT INTO accounts (
