@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-// HSTS adds Strict-Transport-Security header to enforce HTTPS
+// HSTS is middleware that adds the Strict-Transport-Security header to responses to enforce HTTPS.
+// 
+// It sets "Strict-Transport-Security: max-age=31536000; includeSubDomains" on each response before
+// delegating to the next handler.
 func HSTS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add HSTS header: enforce HTTPS for 1 year, including all subdomains
@@ -14,7 +17,10 @@ func HSTS(next http.Handler) http.Handler {
 	})
 }
 
-// SecureCookies wraps ResponseWriter to enforce secure cookie flags
+// SecureCookies returns an http.Handler that wraps the provided handler and ensures
+// any Set-Cookie headers include the Secure, HttpOnly, and SameSite=Strict attributes.
+// It does this by replacing the ResponseWriter with a wrapper that rewrites Set-Cookie
+// headers before they are sent.
 func SecureCookies(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Wrap response writer to intercept Set-Cookie headers
@@ -51,7 +57,8 @@ func (w *secureCookieWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
-// ensureSecureCookie adds Secure, HttpOnly, and SameSite attributes to a cookie
+// ensureSecureCookie ensures the provided Set-Cookie header value includes Secure, HttpOnly, and SameSite=Strict.
+// It checks for each attribute case-insensitively and appends any that are missing (separated by "; "), then returns the resulting cookie string.
 func ensureSecureCookie(cookie string) string {
 	// Check and add Secure flag if not present
 	if !strings.Contains(cookie, "Secure") && !strings.Contains(cookie, "secure") {
@@ -73,7 +80,8 @@ func ensureSecureCookie(cookie string) string {
 
 // RequireHTTPS redirects HTTP requests to HTTPS
 // This should only be used when the Go app is handling TLS directly
-// (not when behind a reverse proxy like nginx)
+// RequireHTTPS redirects incoming requests that are not received over HTTPS to the same host and URI using the https scheme.
+// It treats a request as HTTPS if r.TLS is non-nil, the `X-Forwarded-Proto` header equals "https", or r.URL.Scheme equals "https"; otherwise it issues a permanent (301) redirect to "https://{host}{requestURI}" and does not call the next handler.
 func RequireHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if request came via HTTPS

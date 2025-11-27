@@ -25,6 +25,13 @@ func main() {
 	}
 }
 
+// run initializes application components, starts the HTTP(S) servers and optional sync scheduler, and performs graceful shutdown on termination signals.
+// 
+// It loads configuration, opens the database, creates encryption/auth/handler layers, registers routes and global middleware, and conditionally
+// enables TLS security middleware. If configured, it starts an Open Finance sync scheduler and an HTTP-to-HTTPS redirect server. The function
+// launches the main server (HTTP or HTTPS), waits for SIGINT or SIGTERM, then shuts down the scheduler and servers gracefully.
+// 
+// The function returns a non-nil error if initialization fails (for example configuration, database connection, encryptor, or scheduler setup).
 func run() error {
 	// Load configuration
 	cfg, err := config.Load()

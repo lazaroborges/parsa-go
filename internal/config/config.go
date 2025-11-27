@@ -66,6 +66,13 @@ type TLSConfig struct {
 	RedirectHTTP bool
 }
 
+// Load constructs a Config by reading environment variables, applying sensible defaults,
+// and validating required values.
+// It parses numeric and duration settings used by the database and scheduler, and reads
+// TLS, OAuth, JWT, and encryption settings from the environment.
+// Returns a pointer to the populated Config or an error if any environment value is invalid
+// or a required value is missing (for example: missing JWT_SECRET, missing ENCRYPTION_KEY,
+// ENCRYPTION_KEY must be exactly 32 bytes, and TLS_CERT_PATH/TLS_KEY_PATH are required when TLS_ENABLED=true).
 func Load() (*Config, error) {
 
 	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
