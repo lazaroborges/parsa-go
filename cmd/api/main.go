@@ -11,9 +11,12 @@ import (
 
 	"parsa/internal/auth"
 	"parsa/internal/config"
+	"parsa/internal/crypto"
 	"parsa/internal/database"
 	"parsa/internal/handlers"
 	"parsa/internal/middleware"
+	"parsa/internal/openfinance"
+	"parsa/internal/scheduler"
 )
 
 func main() {
@@ -38,10 +41,19 @@ func run() error {
 
 	log.Println("Connected to database")
 
+	// Initialize encryptor
+	encryptor, err := crypto.NewEncryptor(cfg.Encryption.Key)
+	if err != nil {
+		return err
+	}
+
 	// Initialize repositories
-	userRepo := database.NewUserRepository(db)
+	userRepo := database.NewUserRepository(db, encryptor)
 	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
+	itemRepo := database.NewItemRepository(db)
+	creditCardDataRepo := database.NewCreditCardDataRepository(db)
+	bankRepo := database.NewBankRepository(db)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -60,22 +72,75 @@ func run() error {
 	// Create router
 	mux := http.NewServeMux()
 
-	// Public routes
-	mux.HandleFunc("/auth/google/url", authHandler.HandleAuthURL)
-	mux.HandleFunc("/auth/google/callback", authHandler.HandleCallback)
+	// Serve pages
+	mux.HandleFunc("/", handleLoginPage)
+	mux.HandleFunc("/login", handleLoginPage)
+	mux.HandleFunc("/dashboard", handleDashboard)
+	mux.HandleFunc("/oauth-callback", handleOAuthCallback)
+
+	// Public API routes
+	mux.HandleFunc("/api/auth/register", authHandler.HandleRegister)
+	mux.HandleFunc("/api/auth/login", authHandler.HandleLogin)
+	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
+	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
 	mux.HandleFunc("/health", handleHealth)
 
 	// Protected routes - wrap with auth middleware
 	authMiddleware := middleware.Auth(jwt)
 
-	mux.Handle("/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
-	mux.Handle("/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
-	mux.Handle("/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
-	mux.Handle("/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
-	mux.Handle("/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
+	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleMe)))
+	mux.Handle("/api/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
+	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
+	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
+	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware
 	handler := middleware.Logging(middleware.CORS(mux))
+
+	// Initialize Open Finance sync (if enabled)
+	var sched *scheduler.Scheduler
+	if cfg.Scheduler.Enabled {
+		// Initialize Open Finance client and sync services
+		ofClient := openfinance.NewClient()
+		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
+		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+
+		// Create job provider function that creates composite sync jobs per user
+		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
+			users, err := userRepo.ListUsersWithProviderKey(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			// Create one composite job per user that runs account sync then transaction sync
+			jobs := make([]scheduler.Job, 0, len(users))
+			for _, user := range users {
+				job := openfinance.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
+				jobs = append(jobs, job)
+			}
+
+			log.Printf("Job provider: Created %d sync jobs (%d users)", len(jobs), len(users))
+			return jobs, nil
+		}
+
+		// Initialize scheduler
+		var err error
+		sched, err = scheduler.NewScheduler(scheduler.SchedulerConfig{
+			ScheduleTimes: cfg.Scheduler.ScheduleTimes,
+			WorkerCount:   cfg.Scheduler.WorkerCount,
+			JobDelay:      cfg.Scheduler.JobDelay,
+			QueueSize:     cfg.Scheduler.QueueSize,
+			RunOnStartup:  cfg.Scheduler.RunOnStartup,
+			JobProvider:   jobProvider,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Start scheduler
+		sched.Start()
+		log.Println("Sync scheduler started (accounts + transactions)")
+	}
 
 	// Create server
 	addr := cfg.Server.Host + ":" + cfg.Server.Port
@@ -106,8 +171,14 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Shutdown scheduler if running
+	if sched != nil {
+		sched.Shutdown(30 * time.Second)
+	}
+
+	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
-		return err
+		log.Printf("Error shutting down HTTP server: %v", err)
 	}
 
 	log.Println("Server stopped")
@@ -117,4 +188,16 @@ func run() error {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/login.html")
+}
+
+func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/dashboard.html")
+}
+
+func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/oauth-callback.html")
 }
