@@ -27,22 +27,24 @@
     </div>
 
     <script>
-        // Extract user data from query params (token is in HttpOnly cookie)
-        const params = new URLSearchParams(window.location.search);
-        const userData = params.get('user');
-
-        if (userData) {
-            try {
-                const user = JSON.parse(userData);
-                localStorage.setItem('user', JSON.stringify(user));
-                window.location.href = '/dashboard';
-            } catch (error) {
-                console.error('Error parsing user data:', error);
-                window.location.href = '/login?error=oauth_parse_failed';
+        // Fetch user data from authenticated API endpoint (JWT is in HttpOnly cookie)
+        fetch('/api/users/me', {
+            credentials: 'include'
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch user data');
             }
-        } else {
-            window.location.href = '/login?error=oauth_no_user';
-        }
+            return response.json();
+        })
+        .then(user => {
+            localStorage.setItem('user', JSON.stringify(user));
+            window.location.href = '/dashboard';
+        })
+        .catch(error => {
+            console.error('Error fetching user data:', error);
+            window.location.href = '/login?error=oauth_failed';
+        });
     </script>
 </body>
 </html>
