@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 
 	"parsa/internal/auth"
 	"parsa/internal/database"
@@ -124,18 +123,8 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Set HttpOnly cookie with JWT
 	setAuthCookie(w, r, jwtToken)
 
-	// Encode user data as JSON for URL (token no longer needed in URL)
-	userJSON, err := json.Marshal(user)
-	if err != nil {
-		log.Printf("Error encoding user data for user %d: %v", user.ID, err)
-		http.Error(w, "Failed to encode user data", http.StatusInternalServerError)
-		return
-	}
-
-	// Redirect to callback page with user data as query param (not hash - ngrok/proxies strip hashes)
-	redirectURL := fmt.Sprintf("/oauth-callback?user=%s",
-		url.QueryEscape(string(userJSON)))
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	// Redirect to callback page - client will fetch user data via authenticated API
+	http.Redirect(w, r, "/oauth-callback", http.StatusFound)
 }
 
 type RegisterRequest struct {
