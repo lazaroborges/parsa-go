@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -41,6 +42,7 @@ func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Reque
 
 	accounts, err := h.accountRepo.ListByUserID(r.Context(), userID)
 	if err != nil {
+		log.Printf("Error listing accounts for user %d: %v", userID, err)
 		http.Error(w, "Failed to list accounts", http.StatusInternalServerError)
 		return
 	}
@@ -64,6 +66,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 
 	var req CreateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding create account request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -92,6 +95,7 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
+		log.Printf("Error creating account for user %d: %v", userID, err)
 		http.Error(w, "Failed to create account", http.StatusInternalServerError)
 		return
 	}
@@ -123,6 +127,7 @@ func (h *AccountHandler) HandleGetAccount(w http.ResponseWriter, r *http.Request
 
 	account, err := h.accountRepo.GetByID(r.Context(), accountID)
 	if err != nil {
+		log.Printf("Error getting account %s: %v", accountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -160,6 +165,7 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 	// Verify ownership before deleting
 	account, err := h.accountRepo.GetByID(r.Context(), accountID)
 	if err != nil {
+		log.Printf("Error getting account %s for deletion: %v", accountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -170,6 +176,7 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.accountRepo.Delete(r.Context(), accountID); err != nil {
+		log.Printf("Error deleting account %s: %v", accountID, err)
 		http.Error(w, "Failed to delete account", http.StatusInternalServerError)
 		return
 	}

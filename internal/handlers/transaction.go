@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 	// Verify account ownership
 	account, err := h.accountRepo.GetByID(r.Context(), accountID)
 	if err != nil {
+		log.Printf("Error getting account %s for transaction list: %v", accountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -85,6 +87,7 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 
 	transactions, err := h.transactionRepo.ListByAccountID(r.Context(), accountID, limit, offset)
 	if err != nil {
+		log.Printf("Error listing transactions for account %s: %v", accountID, err)
 		http.Error(w, "Failed to list transactions", http.StatusInternalServerError)
 		return
 	}
@@ -108,6 +111,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 
 	var req CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding create transaction request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -120,6 +124,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	// Verify account ownership
 	account, err := h.accountRepo.GetByID(r.Context(), req.AccountID)
 	if err != nil {
+		log.Printf("Error getting account %s for transaction creation: %v", req.AccountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -161,6 +166,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	})
 
 	if err != nil {
+		log.Printf("Error creating transaction for account %s: %v", req.AccountID, err)
 		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
 		return
 	}
@@ -168,8 +174,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	// Update account balance
 	newBalance := account.Balance + req.Amount
 	if err := h.accountRepo.UpdateBalance(r.Context(), req.AccountID, newBalance); err != nil {
-		// Log error but don't fail the request
-		// In production, this should be a transaction
+		log.Printf("Error updating balance for account %s after transaction: %v", req.AccountID, err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -198,6 +203,7 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 
 	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
+		log.Printf("Error getting transaction %s: %v", transactionID, err)
 		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
 		return
 	}
@@ -209,6 +215,7 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 	// Verify ownership through account
 	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
 	if err != nil {
+		log.Printf("Error getting account %s for transaction %s: %v", transaction.AccountID, transactionID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -243,6 +250,7 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 
 	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
+		log.Printf("Error getting transaction %s for deletion: %v", transactionID, err)
 		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
 		return
 	}
@@ -254,6 +262,7 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 	// Verify ownership through account
 	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
 	if err != nil {
+		log.Printf("Error getting account %s for transaction deletion: %v", transaction.AccountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -266,10 +275,11 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 	// Update account balance before deleting
 	newBalance := account.Balance - transaction.Amount
 	if err := h.accountRepo.UpdateBalance(r.Context(), transaction.AccountID, newBalance); err != nil {
-		// Log error but continue with deletion
+		log.Printf("Error updating balance for account %s before transaction deletion: %v", transaction.AccountID, err)
 	}
 
 	if err := h.transactionRepo.Delete(r.Context(), transactionID); err != nil {
+		log.Printf("Error deleting transaction %s: %v", transactionID, err)
 		http.Error(w, "Failed to delete transaction", http.StatusInternalServerError)
 		return
 	}

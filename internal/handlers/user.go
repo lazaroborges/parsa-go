@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"parsa/internal/database"
@@ -32,6 +33,7 @@ func (h *UserHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPatch:
 		h.handleUpdateMe(w, r, userID)
 	default:
+		log.Printf("Method not allowed for /api/users/me: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -50,12 +52,14 @@ func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID
 func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	var params models.UpdateUserParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding user update request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	user, err := h.userRepo.Update(r.Context(), userID, params)
 	if err != nil {
+		log.Printf("Error updating user %d: %v", userID, err)
 		http.Error(w, "Failed to update user", http.StatusInternalServerError)
 		return
 	}
