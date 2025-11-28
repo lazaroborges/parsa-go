@@ -67,22 +67,39 @@ func (w *secureCookieWriter) WriteHeader(statusCode int) {
 
 // ensureSecureCookie adds Secure, HttpOnly, and SameSite attributes to a cookie
 func ensureSecureCookie(cookie string) string {
-	// Check and add Secure flag if not present
-	if !strings.Contains(cookie, "Secure") && !strings.Contains(cookie, "secure") {
-		cookie += "; Secure"
+	parts := strings.Split(cookie, ";")
+
+	hasSecure := false
+	hasHttpOnly := false
+	hasSameSite := false
+
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		lower := strings.ToLower(p)
+
+		switch {
+		case lower == "secure":
+			hasSecure = true
+		case lower == "httponly":
+			hasHttpOnly = true
+		case strings.HasPrefix(lower, "samesite"):
+			hasSameSite = true
+		}
+
+		parts[i] = p
 	}
 
-	// Check and add HttpOnly flag if not present
-	if !strings.Contains(cookie, "HttpOnly") && !strings.Contains(cookie, "httponly") {
-		cookie += "; HttpOnly"
+	if !hasSecure {
+		parts = append(parts, "Secure")
+	}
+	if !hasHttpOnly {
+		parts = append(parts, "HttpOnly")
+	}
+	if !hasSameSite {
+		parts = append(parts, "SameSite=Strict")
 	}
 
-	// Check and add SameSite flag if not present
-	if !strings.Contains(cookie, "SameSite") && !strings.Contains(cookie, "samesite") {
-		cookie += "; SameSite=Strict"
-	}
-
-	return cookie
+	return strings.Join(parts, "; ")
 }
 
 // RequireHTTPS redirects HTTP requests to HTTPS
