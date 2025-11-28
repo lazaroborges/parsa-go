@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"net/url"
 
 	"parsa/internal/auth"
 	"parsa/internal/database"
@@ -50,6 +50,7 @@ func (h *AuthHandler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 
 	state, err := generateState()
 	if err != nil {
+		log.Printf("Error generating OAuth state: %v", err)
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
@@ -114,22 +115,16 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT
 	jwtToken, err := h.jwt.Generate(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Error generating JWT for user %d: %v", user.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
-	// Encode user data as JSON for URL
-	userJSON, err := json.Marshal(user)
-	if err != nil {
-		http.Error(w, "Failed to encode user data", http.StatusInternalServerError)
-		return
-	}
+	// Set HttpOnly cookie with JWT
+	setAuthCookie(w, r, jwtToken)
 
-	// Redirect to callback page with token and user data in URL hash
-	redirectURL := fmt.Sprintf("/oauth-callback#token=%s&user=%s",
-		url.QueryEscape(jwtToken),
-		url.QueryEscape(string(userJSON)))
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	// Redirect to callback page - client will fetch user data via authenticated API
+	http.Redirect(w, r, "/oauth-callback", http.StatusFound)
 }
 
 type RegisterRequest struct {
@@ -175,6 +170,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Hash password
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
+		log.Printf("Error hashing password during registration: %v", err)
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
@@ -193,10 +189,12 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT
 	token, err := h.jwt.Generate(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Error generating JWT for new user %d: %v", user.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
+	setAuthCookie(w, r, token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
@@ -250,11 +248,36 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookie(w, r, token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
 		User:  user,
 	})
+}
+
+// HandleLogout clears the auth cookie
+func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only set Secure flag when actually using HTTPS
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
+	// Clear the cookie by setting MaxAge to -1
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func generateState() (string, error) {
@@ -263,4 +286,20 @@ func generateState() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// setAuthCookie sets the JWT as an HttpOnly cookie
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	// Only set Secure flag when actually using HTTPS
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400, // 24 hours (matches JWT expiration)
+	})
 }

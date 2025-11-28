@@ -150,30 +150,6 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*
 	return accounts, nil
 }
 
-func (r *AccountRepository) UpdateBalance(ctx context.Context, id string, balance float64) error {
-	query := `
-		UPDATE accounts
-		SET balance = $1, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $2
-	`
-
-	result, err := r.db.ExecContext(ctx, query, balance, id)
-	if err != nil {
-		return fmt.Errorf("failed to update account balance: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get affected rows: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("account not found")
-	}
-
-	return nil
-}
-
 func (r *AccountRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM accounts WHERE id = $1`
 

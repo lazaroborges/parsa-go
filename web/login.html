@@ -140,6 +140,7 @@
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password }),
                 });
@@ -147,7 +148,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    localStorage.setItem('token', data.token);
+                    // Token is now in HttpOnly cookie, just store user data
                     localStorage.setItem('user', JSON.stringify(data.user));
                     showSuccess('Login successful!');
                     setTimeout(() => window.location.href = '/dashboard', 300);
@@ -168,6 +169,7 @@
             try {
                 const response = await fetch('/api/auth/register', {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, email, password }),
                 });
@@ -175,7 +177,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    localStorage.setItem('token', data.token);
+                    // Token is now in HttpOnly cookie, just store user data
                     localStorage.setItem('user', JSON.stringify(data.user));
                     showSuccess('Registration successful!');
                     setTimeout(() => window.location.href = '/dashboard', 1000);

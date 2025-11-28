@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -81,6 +82,7 @@ func run() error {
 	// Public API routes
 	mux.HandleFunc("/api/auth/register", authHandler.HandleRegister)
 	mux.HandleFunc("/api/auth/login", authHandler.HandleLogin)
+	mux.HandleFunc("/api/auth/logout", authHandler.HandleLogout)
 	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
 	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
 	mux.HandleFunc("/health", handleHealth)
@@ -95,7 +97,13 @@ func run() error {
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware
-	handler := middleware.Logging(middleware.CORS(mux))
+	handler := middleware.Logging(middleware.CORS(cfg.Server.AllowedHosts)(mux))
+
+	// Apply security middleware when TLS is enabled
+	if cfg.TLS.Enabled {
+		handler = middleware.HSTS(middleware.SecureCookies(handler))
+		log.Println("TLS security middleware enabled (HSTS + SecureCookies)")
+	}
 
 	// Initialize Open Finance sync (if enabled)
 	var sched *scheduler.Scheduler
@@ -142,7 +150,7 @@ func run() error {
 		log.Println("Sync scheduler started (accounts + transactions)")
 	}
 
-	// Create server
+	// Create main server
 	addr := cfg.Server.Host + ":" + cfg.Server.Port
 	srv := &http.Server{
 		Addr:         addr,
@@ -152,11 +160,61 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in a goroutine
+	// Start HTTP redirect server if TLS redirect is enabled
+	var redirectSrv *http.Server
+	if cfg.TLS.Enabled && cfg.TLS.RedirectHTTP {
+		redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get the host to redirect to (check X-Forwarded-Host for proxy support)
+			host := r.Header.Get("X-Forwarded-Host")
+			if host == "" {
+				host = r.Host
+			}
+
+			// Validate host against allowed hosts to prevent redirect poisoning
+			if !isHostAllowed(host, cfg.Server.AllowedHosts) {
+				http.Error(w, "Invalid host", http.StatusBadRequest)
+				return
+			}
+
+			// Strip port from host if present for cleaner redirect
+			canonicalHost := host
+			if idx := strings.Index(host, ":"); idx != -1 {
+				canonicalHost = host[:idx]
+			}
+
+			// Redirect to HTTPS with validated host and request URI
+			httpsURL := "https://" + canonicalHost + r.RequestURI
+			http.Redirect(w, r, httpsURL, http.StatusMovedPermanently)
+		})
+
+		redirectSrv = &http.Server{
+			Addr:         ":80",
+			Handler:      redirectHandler,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+
+		go func() {
+			log.Println("HTTP redirect server starting on :80")
+			if err := redirectSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("HTTP redirect server error: %v", err)
+			}
+		}()
+	}
+
+	// Start main server in a goroutine
 	go func() {
-		log.Printf("Server starting on %s", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+		if cfg.TLS.Enabled {
+			log.Printf("HTTPS server starting on %s", addr)
+			if err := srv.ListenAndServeTLS(cfg.TLS.CertPath, cfg.TLS.KeyPath); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTPS server error: %v", err)
+			}
+		} else {
+			log.Printf("HTTP server starting on %s", addr)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTP server error: %v", err)
+			}
 		}
 	}()
 
@@ -176,9 +234,16 @@ func run() error {
 		sched.Shutdown(30 * time.Second)
 	}
 
-	// Shutdown HTTP server
+	// Shutdown HTTP redirect server if running
+	if redirectSrv != nil {
+		if err := redirectSrv.Shutdown(ctx); err != nil {
+			log.Printf("Error shutting down HTTP redirect server: %v", err)
+		}
+	}
+
+	// Shutdown main server
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("Error shutting down HTTP server: %v", err)
+		log.Printf("Error shutting down main server: %v", err)
 	}
 
 	log.Println("Server stopped")
@@ -200,4 +265,38 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/oauth-callback.html")
+}
+
+// isHostAllowed validates a host against the allowed hosts list
+func isHostAllowed(host string, allowedHosts []string) bool {
+	// If no allowed hosts configured, allow all (backwards compatible)
+	if len(allowedHosts) == 0 {
+		return true
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+
+	// Strip port from host for comparison
+	hostWithoutPort := host
+	if idx := strings.Index(host, ":"); idx != -1 {
+		hostWithoutPort = host[:idx]
+	}
+
+	// Check against each allowed host
+	for _, allowedHost := range allowedHosts {
+		allowedHost = strings.ToLower(strings.TrimSpace(allowedHost))
+
+		// Strip port from allowed host for comparison
+		allowedHostWithoutPort := allowedHost
+		if idx := strings.Index(allowedHost, ":"); idx != -1 {
+			allowedHostWithoutPort = allowedHost[:idx]
+		}
+
+		// Match with or without port
+		if host == allowedHost || hostWithoutPort == allowedHostWithoutPort {
+			return true
+		}
+	}
+
+	return false
 }
