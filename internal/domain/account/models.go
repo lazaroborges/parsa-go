@@ -83,6 +83,12 @@ func (p CreateParams) Validate() error {
 	if !IsValidAccountType(p.AccountType) {
 		return ErrInvalidAccountType
 	}
+	if p.Currency == "" {
+		return errors.New("currency is required")
+	}
+	if !IsValidCurrency(p.Currency) {
+		return ErrInvalidCurrency
+	}
 	return nil
 }
 
