@@ -17,6 +17,14 @@ var (
 		"SAVINGS_ACCOUNT":  {},
 		"CREDIT_CARD":      {},
 	}
+	// Common ISO 4217 currency codes
+	validCurrencies = map[string]struct{}{
+		"BRL": {}, "USD": {}, "EUR": {}, "GBP": {}, "JPY": {},
+		"CHF": {}, "CAD": {}, "AUD": {}, "NZD": {}, "CNY": {},
+		"INR": {}, "MXN": {}, "ZAR": {}, "SEK": {}, "NOK": {},
+		"DKK": {}, "PLN": {}, "TRY": {}, "RUB": {}, "KRW": {},
+		"SGD": {}, "HKD": {}, "ARS": {}, "CLP": {}, "COP": {},
+	}
 )
 
 // Domain errors
@@ -26,6 +34,7 @@ var (
 	ErrAccountNotFound       = errors.New("account not found")
 	ErrForbidden             = errors.New("access forbidden")
 	ErrInvalidInput          = errors.New("invalid input")
+	ErrInvalidCurrency       = errors.New("valid ISO 4217 currency is required")
 )
 
 // Account represents a financial account domain entity
@@ -119,6 +128,9 @@ func (p UpsertParams) Validate() error {
 	if p.Subtype != nil && !IsValidAccountSubtype(*p.Subtype) {
 		return ErrInvalidAccountSubtype
 	}
+	if p.Currency == "" || !IsValidCurrency(p.Currency) {
+		return ErrInvalidCurrency
+	}
 	return nil
 }
 
@@ -131,5 +143,14 @@ func IsValidAccountType(t string) bool {
 // IsValidAccountSubtype checks if the provided subtype is valid.
 func IsValidAccountSubtype(s string) bool {
 	_, ok := accountSubtypes[s]
+	return ok
+}
+
+// IsValidCurrency checks if the provided currency is a valid ISO 4217 code.
+func IsValidCurrency(c string) bool {
+	if len(c) != 3 {
+		return false
+	}
+	_, ok := validCurrencies[c]
 	return ok
 }
