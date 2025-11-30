@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"parsa/internal/database"
+	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/domain/account"
-	"parsa/internal/models"
+	"parsa/internal/domain"
 )
 
 // TransactionSyncResult contains the results of a transaction sync operation

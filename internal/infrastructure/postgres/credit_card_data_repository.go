@@ -1,11 +1,11 @@
-package database
+package postgres
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 
-	"parsa/internal/models"
+	"parsa/internal/domain"
 )
 
 type CreditCardDataRepository struct {

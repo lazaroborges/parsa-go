@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"parsa/internal/domain/account"
-	"parsa/internal/middleware"
+	"parsa/internal/shared/middleware"
 )
 
 // AccountHandler is the refactored handler using the service layer

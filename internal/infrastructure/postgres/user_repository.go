@@ -1,12 +1,12 @@
-package database
+package postgres
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 
-	"parsa/internal/crypto"
-	"parsa/internal/models"
+	"parsa/internal/infrastructure/crypto"
+	"parsa/internal/domain"
 )
 
 type UserRepository struct {

@@ -1,3 +1,4 @@
+// Package openfinance provides domain services for syncing financial data
 package openfinance
 
 import (
@@ -5,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"parsa/internal/database"
+	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/domain/account"
 )
 

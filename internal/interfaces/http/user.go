@@ -1,13 +1,13 @@
-package handlers
+package http
 
 import (
 	"encoding/json"
 	"log"
 	"net/http"
 
-	"parsa/internal/database"
-	"parsa/internal/middleware"
-	"parsa/internal/models"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/shared/middleware"
+	"parsa/internal/domain"
 )
 
 type UserHandler struct {

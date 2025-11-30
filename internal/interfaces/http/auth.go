@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"crypto/rand"
@@ -8,9 +8,9 @@ import (
 	"log"
 	"net/http"
 
-	"parsa/internal/auth"
-	"parsa/internal/database"
-	"parsa/internal/models"
+	"parsa/internal/shared/auth"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/domain"
 )
 
 type AuthHandler struct {

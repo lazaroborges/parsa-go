@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"parsa/internal/auth"
+	"parsa/internal/shared/auth"
 )
 
 type ContextKey string

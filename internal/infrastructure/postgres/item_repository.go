@@ -1,10 +1,10 @@
-package database
+package postgres
 
 import (
 	"context"
 	"fmt"
 
-	"parsa/internal/models"
+	"parsa/internal/domain"
 )
 
 type ItemRepository struct {

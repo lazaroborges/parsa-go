@@ -10,16 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"parsa/internal/auth"
-	"parsa/internal/config"
-	"parsa/internal/crypto"
-	"parsa/internal/database"
 	"parsa/internal/domain/account"
-	"parsa/internal/handlers"
+	"parsa/internal/domain/openfinance"
+	"parsa/internal/infrastructure/crypto"
 	"parsa/internal/infrastructure/postgres"
-	"parsa/internal/middleware"
-	"parsa/internal/openfinance"
-	"parsa/internal/scheduler"
+	httphandlers "parsa/internal/interfaces/http"
+	"parsa/internal/interfaces/scheduler"
+	"parsa/internal/shared/auth"
+	"parsa/internal/shared/config"
+	"parsa/internal/shared/middleware"
+	ofclient "parsa/internal/infrastructure/openfinance"
 )
 
 func main() {
@@ -36,7 +36,7 @@ func run() error {
 	}
 
 	// Connect to database
-	db, err := database.New(cfg.Database.ConnectionString())
+	db, err := postgres.New(cfg.Database.ConnectionString())
 	if err != nil {
 		return err
 	}
@@ -51,11 +51,11 @@ func run() error {
 	}
 
 	// Initialize repositories
-	userRepo := database.NewUserRepository(db, encryptor)
-	transactionRepo := database.NewTransactionRepository(db)
-	itemRepo := database.NewItemRepository(db)
-	creditCardDataRepo := database.NewCreditCardDataRepository(db)
-	bankRepo := database.NewBankRepository(db)
+	userRepo := postgres.NewUserRepository(db, encryptor)
+	transactionRepo := postgres.NewTransactionRepository(db)
+	itemRepo := postgres.NewItemRepository(db)
+	creditCardDataRepo := postgres.NewCreditCardDataRepository(db)
+	bankRepo := postgres.NewBankRepository(db)
 
 	// Initialize infrastructure layer (new architecture)
 	accountRepoPostgres := postgres.NewAccountRepository(db.DB)
@@ -64,7 +64,7 @@ func run() error {
 	accountService := account.NewService(accountRepoPostgres)
 
 	// Keep old repository for backward compatibility with sync services
-	accountRepo := database.NewAccountRepository(db)
+	accountRepo := postgres.NewAccountRepository(db)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -75,11 +75,11 @@ func run() error {
 	)
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userRepo, googleOAuth, jwt)
-	userHandler := handlers.NewUserHandler(userRepo)
+	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt)
+	userHandler := httphandlers.NewUserHandler(userRepo)
 	// Use new service-based handler (refactored architecture)
-	accountHandler := handlers.NewAccountHandler(accountService)
-	transactionHandler := handlers.NewTransactionHandler(transactionRepo, accountRepo)
+	accountHandler := httphandlers.NewAccountHandler(accountService)
+	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
 
 	// Create router
 	mux := http.NewServeMux()
@@ -121,9 +121,9 @@ func run() error {
 	var sched *scheduler.Scheduler
 	if cfg.Scheduler.Enabled {
 		// Initialize Open Finance client and sync services
-		ofClient := openfinance.NewClient()
-		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
-		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+		ofClient := ofclient.NewClient()
+		accountSyncService := ofclient.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
+		transactionSyncService := ofclient.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
 
 		// Create job provider function that creates composite sync jobs per user
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
@@ -135,7 +135,7 @@ func run() error {
 			// Create one composite job per user that runs account sync then transaction sync
 			jobs := make([]scheduler.Job, 0, len(users))
 			for _, user := range users {
-				job := openfinance.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
+				job := ofclient.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
 				jobs = append(jobs, job)
 			}
 

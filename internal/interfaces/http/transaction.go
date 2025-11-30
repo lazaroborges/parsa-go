@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"encoding/json"
@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"parsa/internal/database"
-	"parsa/internal/middleware"
-	"parsa/internal/models"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/shared/middleware"
+	"parsa/internal/domain"
 
 	"github.com/google/uuid"
 )
