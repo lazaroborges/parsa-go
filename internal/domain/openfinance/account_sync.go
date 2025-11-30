@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/domain/account"
 )
@@ -21,18 +22,18 @@ type SyncResult struct {
 
 // AccountSyncService handles syncing accounts from the Open Finance API
 type AccountSyncService struct {
-	client         *Client
-	userRepo       *database.UserRepository
+	client         *ofclient.Client
+	userRepo       *postgres.UserRepository
 	accountService *account.Service
-	itemRepo       *database.ItemRepository
+	itemRepo       *postgres.ItemRepository
 }
 
 // NewAccountSyncService creates a new account sync service
 func NewAccountSyncService(
-	client *Client,
-	userRepo *database.UserRepository,
+	client *ofclient.Client,
+	userRepo *postgres.UserRepository,
 	accountService *account.Service,
-	itemRepo *database.ItemRepository,
+	itemRepo *postgres.ItemRepository,
 ) *AccountSyncService {
 	return &AccountSyncService{
 		client:         client,
@@ -84,7 +85,7 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 }
 
 // syncAccount syncs a single account
-func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiAccount Account, result *SyncResult) error {
+func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiAccount ofclient.Account, result *SyncResult) error {
 	// Parse balance from string
 	balance, err := apiAccount.GetBalance()
 	if err != nil {

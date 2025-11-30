@@ -58,13 +58,10 @@ func run() error {
 	bankRepo := postgres.NewBankRepository(db)
 
 	// Initialize infrastructure layer (new architecture)
-	accountRepoPostgres := postgres.NewAccountRepository(db.DB)
+	accountRepo := postgres.NewAccountRepository(db.DB)
 
 	// Initialize domain services (business logic layer)
-	accountService := account.NewService(accountRepoPostgres)
-
-	// Keep old repository for backward compatibility with sync services
-	accountRepo := postgres.NewAccountRepository(db)
+	accountService := account.NewService(accountRepo)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -122,8 +119,8 @@ func run() error {
 	if cfg.Scheduler.Enabled {
 		// Initialize Open Finance client and sync services
 		ofClient := ofclient.NewClient()
-		accountSyncService := ofclient.NewAccountSyncService(ofClient, userRepo, accountRepo, itemRepo)
-		transactionSyncService := ofclient.NewTransactionSyncService(ofClient, userRepo, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
+		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
 
 		// Create job provider function that creates composite sync jobs per user
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
@@ -135,7 +132,7 @@ func run() error {
 			// Create one composite job per user that runs account sync then transaction sync
 			jobs := make([]scheduler.Job, 0, len(users))
 			for _, user := range users {
-				job := ofclient.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
+				job := scheduler.NewUserSyncJob(user.ID, accountSyncService, transactionSyncService)
 				jobs = append(jobs, job)
 			}
 

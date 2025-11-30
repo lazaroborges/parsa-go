@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"parsa/internal/domain"
+	"parsa/internal/models"
 )
 
 type CreditCardDataRepository struct {

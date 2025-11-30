@@ -10,16 +10,16 @@ import (
 
 	"parsa/internal/shared/auth"
 	"parsa/internal/infrastructure/postgres"
-	"parsa/internal/domain"
+	"parsa/internal/domain/user"
 )
 
 type AuthHandler struct {
-	userRepo      *database.UserRepository
+	userRepo      *postgres.UserRepository
 	oauthProvider auth.OAuthProvider
 	jwt           *auth.JWT
 }
 
-func NewAuthHandler(userRepo *database.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT) *AuthHandler {
+func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT) *AuthHandler {
 	return &AuthHandler{
 		userRepo:      userRepo,
 		oauthProvider: oauthProvider,
@@ -38,7 +38,7 @@ type AuthCallbackRequest struct {
 
 type AuthResponse struct {
 	Token string       `json:"token"`
-	User  *models.User `json:"user"`
+	User  *user.User `json:"user"`
 }
 
 // HandleAuthURL generates the OAuth authorization URL
@@ -93,11 +93,11 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find or create user
-	user, err := h.userRepo.GetByOAuth(ctx, "google", userInfo.ID)
+	userModel, err := h.userRepo.GetByOAuth(ctx, "google", userInfo.ID)
 	if err != nil {
 		// User doesn't exist, create new user
 		provider := "google"
-		user, err = h.userRepo.Create(ctx, models.CreateUserParams{
+		userModel, err = h.userRepo.Create(ctx, user.CreateUserParams{
 			Email:         userInfo.Email,
 			Name:          userInfo.Name,
 			OAuthProvider: &provider,
@@ -113,9 +113,9 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT
-	jwtToken, err := h.jwt.Generate(user.ID, user.Email)
+	jwtToken, err := h.jwt.Generate(userModel.ID, userModel.Email)
 	if err != nil {
-		log.Printf("Error generating JWT for user %d: %v", user.ID, err)
+		log.Printf("Error generating JWT for user %d: %v", userModel.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -176,7 +176,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create user
-	user, err := h.userRepo.Create(ctx, models.CreateUserParams{
+	userModel, err := h.userRepo.Create(ctx, user.CreateUserParams{
 		Email:        req.Email,
 		Name:         req.Name,
 		PasswordHash: &passwordHash,
@@ -187,9 +187,9 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT
-	token, err := h.jwt.Generate(user.ID, user.Email)
+	token, err := h.jwt.Generate(userModel.ID, userModel.Email)
 	if err != nil {
-		log.Printf("Error generating JWT for new user %d: %v", user.ID, err)
+		log.Printf("Error generating JWT for new user %d: %v", userModel.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -198,7 +198,7 @@ func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
-		User:  user,
+		User:  userModel,
 	})
 }
 
@@ -223,26 +223,26 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get user by email
-	user, err := h.userRepo.GetByEmail(ctx, req.Email)
+	userModel, err := h.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	// Check if user has password authentication
-	if user.PasswordHash == nil {
+	if userModel.PasswordHash == nil {
 		http.Error(w, "This account uses OAuth authentication. Please sign in with Google.", http.StatusBadRequest)
 		return
 	}
 
 	// Verify password
-	if err := auth.VerifyPassword(*user.PasswordHash, req.Password); err != nil {
+	if err := auth.VerifyPassword(*userModel.PasswordHash, req.Password); err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	// Generate JWT
-	token, err := h.jwt.Generate(user.ID, user.Email)
+	token, err := h.jwt.Generate(userModel.ID, userModel.Email)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
@@ -252,7 +252,7 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Token: token,
-		User:  user,
+		User:  userModel,
 	})
 }
 

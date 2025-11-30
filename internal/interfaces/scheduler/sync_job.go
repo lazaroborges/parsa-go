@@ -1,20 +1,22 @@
-package openfinance
+package scheduler
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"strconv"
+
+	"parsa/internal/domain/openfinance"
 )
 
-// AccountSyncJob implements the scheduler.Job interface for syncing user accounts
+// AccountSyncJob implements the Job interface for syncing user accounts
 type AccountSyncJob struct {
 	userID      int64
-	syncService *AccountSyncService
+	syncService *openfinance.AccountSyncService
 }
 
 // NewAccountSyncJob creates a new account sync job for a user
-func NewAccountSyncJob(userID int64, syncService *AccountSyncService) *AccountSyncJob {
+func NewAccountSyncJob(userID int64, syncService *openfinance.AccountSyncService) *AccountSyncJob {
 	return &AccountSyncJob{
 		userID:      userID,
 		syncService: syncService,
@@ -59,12 +61,12 @@ func (j *AccountSyncJob) Description() string {
 // This ensures accounts are synced before transactions, avoiding race conditions.
 type UserSyncJob struct {
 	userID             int64
-	accountSyncService *AccountSyncService
-	txSyncService      *TransactionSyncService
+	accountSyncService *openfinance.AccountSyncService
+	txSyncService      *openfinance.TransactionSyncService
 }
 
 // NewUserSyncJob creates a new composite sync job for a user
-func NewUserSyncJob(userID int64, accountSyncService *AccountSyncService, txSyncService *TransactionSyncService) *UserSyncJob {
+func NewUserSyncJob(userID int64, accountSyncService *openfinance.AccountSyncService, txSyncService *openfinance.TransactionSyncService) *UserSyncJob {
 	return &UserSyncJob{
 		userID:             userID,
 		accountSyncService: accountSyncService,
@@ -99,14 +101,14 @@ func (j *UserSyncJob) Description() string {
 	return fmt.Sprintf("Full sync (accounts + transactions) for user %d", j.userID)
 }
 
-// TransactionSyncJob implements the scheduler.Job interface for syncing user transactions
+// TransactionSyncJob implements the Job interface for syncing user transactions
 type TransactionSyncJob struct {
 	userID      int64
-	syncService *TransactionSyncService
+	syncService *openfinance.TransactionSyncService
 }
 
 // NewTransactionSyncJob creates a new transaction sync job for a user
-func NewTransactionSyncJob(userID int64, syncService *TransactionSyncService) *TransactionSyncJob {
+func NewTransactionSyncJob(userID int64, syncService *openfinance.TransactionSyncService) *TransactionSyncJob {
 	return &TransactionSyncJob{
 		userID:      userID,
 		syncService: syncService,

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/domain/account"
-	"parsa/internal/domain"
+	"parsa/internal/domain/transaction"
+	"parsa/internal/models"
 )
 
 // TransactionSyncResult contains the results of a transaction sync operation
@@ -22,27 +24,30 @@ type TransactionSyncResult struct {
 
 // TransactionSyncService handles syncing transactions from the Open Finance API
 type TransactionSyncService struct {
-	client             *Client
-	userRepo           *database.UserRepository
+	client             *ofclient.Client
+	userRepo           *postgres.UserRepository
 	accountService     *account.Service
-	transactionRepo    *database.TransactionRepository
-	creditCardDataRepo *database.CreditCardDataRepository
-	bankRepo           *database.BankRepository
+	accountRepo        *postgres.AccountRepository
+	transactionRepo    *postgres.TransactionRepository
+	creditCardDataRepo *postgres.CreditCardDataRepository
+	bankRepo           *postgres.BankRepository
 }
 
 // NewTransactionSyncService creates a new transaction sync service
 func NewTransactionSyncService(
-	client *Client,
-	userRepo *database.UserRepository,
+	client *ofclient.Client,
+	userRepo *postgres.UserRepository,
 	accountService *account.Service,
-	transactionRepo *database.TransactionRepository,
-	creditCardDataRepo *database.CreditCardDataRepository,
-	bankRepo *database.BankRepository,
+	accountRepo *postgres.AccountRepository,
+	transactionRepo *postgres.TransactionRepository,
+	creditCardDataRepo *postgres.CreditCardDataRepository,
+	bankRepo *postgres.BankRepository,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
 		client:             client,
 		userRepo:           userRepo,
 		accountService:     accountService,
+		accountRepo:        accountRepo,
 		transactionRepo:    transactionRepo,
 		creditCardDataRepo: creditCardDataRepo,
 		bankRepo:           bankRepo,
@@ -82,9 +87,9 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}
-	for _, acc := range accounts {
-		key := fmt.Sprintf("%s|%s|%s", acc.Name, acc.AccountType, acc.Subtype)
-		accountCache[key] = acc
+	for i := range accounts {
+		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
+		accountCache[key] = accounts[i]
 	}
 
 	// Process each transaction
@@ -106,8 +111,8 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 func (s *TransactionSyncService) processTransaction(
 	ctx context.Context,
 	userID int64,
-	apiTx *Transaction,
-	accountCache map[string]*models.Account,
+	apiTx *ofclient.Transaction,
+	accountCache map[string]*account.Account,
 	result *TransactionSyncResult,
 ) error {
 	// Match transaction to account using: account_name -> name, account_type -> account_type, account_subtype -> subtype
@@ -117,7 +122,7 @@ func (s *TransactionSyncService) processTransaction(
 	if !found {
 		// Try to find in database (in case cache is stale)
 		var err error
-		account, err = s.accountRepo.FindByMatch(ctx, userID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
+		account, err = s.accountService.FindAccountByMatch(ctx, userID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 		if err != nil {
 			return fmt.Errorf("failed to find account: %w", err)
 		}
@@ -132,6 +137,8 @@ func (s *TransactionSyncService) processTransaction(
 	}
 
 	// If account has no bank assigned and we have item_bank_name, assign it
+	// Note: We can't verify ownership here as this is a sync operation from the provider
+	// The account already belongs to the user by virtue of being in their provider data
 	if account.BankID == 0 && apiTx.ItemBankName != "" {
 		bank, err := s.bankRepo.FindOrCreateByName(ctx, apiTx.ItemBankName)
 		if err != nil {
@@ -168,7 +175,7 @@ func (s *TransactionSyncService) processTransaction(
 	}
 
 	// Prepare upsert params
-	upsertParams := models.UpsertTransactionParams{
+	upsertParams := transaction.UpsertTransactionParams{
 		ID:              apiTx.ID,
 		AccountID:       account.ID,
 		Amount:          amount,
@@ -205,7 +212,7 @@ func (s *TransactionSyncService) processTransaction(
 func (s *TransactionSyncService) processCreditCardData(
 	ctx context.Context,
 	transactionID string,
-	ccData *TransactionCreditData,
+	ccData *ofclient.TransactionCreditData,
 ) error {
 	purchaseDate, err := ccData.GetPurchaseDate()
 	if err != nil {

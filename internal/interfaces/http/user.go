@@ -7,14 +7,14 @@ import (
 
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/shared/middleware"
-	"parsa/internal/domain"
+	"parsa/internal/domain/user"
 )
 
 type UserHandler struct {
-	userRepo *database.UserRepository
+	userRepo *postgres.UserRepository
 }
 
-func NewUserHandler(userRepo *database.UserRepository) *UserHandler {
+func NewUserHandler(userRepo *postgres.UserRepository) *UserHandler {
 	return &UserHandler{userRepo: userRepo}
 }
 
@@ -50,7 +50,7 @@ func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID
 }
 
 func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID int64) {
-	var params models.UpdateUserParams
+	var params user.UpdateUserParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		log.Printf("Error decoding user update request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

@@ -10,17 +10,17 @@ import (
 
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/shared/middleware"
-	"parsa/internal/domain"
+	"parsa/internal/domain/transaction"
 
 	"github.com/google/uuid"
 )
 
 type TransactionHandler struct {
-	transactionRepo *database.TransactionRepository
-	accountRepo     *database.AccountRepository
+	transactionRepo *postgres.TransactionRepository
+	accountRepo     *postgres.AccountRepository
 }
 
-func NewTransactionHandler(transactionRepo *database.TransactionRepository, accountRepo *database.AccountRepository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo *postgres.TransactionRepository, accountRepo *postgres.AccountRepository) *TransactionHandler {
 	return &TransactionHandler{
 		transactionRepo: transactionRepo,
 		accountRepo:     accountRepo,
@@ -154,7 +154,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	// Generate UUID for manual transactions
 	txID := uuid.New().String()
 
-	transaction, err := h.transactionRepo.Create(r.Context(), models.CreateTransactionParams{
+	transaction, err := h.transactionRepo.Create(r.Context(), transaction.CreateTransactionParams{
 		ID:              txID,
 		AccountID:       req.AccountID,
 		Amount:          req.Amount,

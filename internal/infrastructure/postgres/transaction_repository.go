@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"parsa/internal/domain"
+	"parsa/internal/domain/transaction"
 )
 
 type TransactionRepository struct {
@@ -16,7 +16,7 @@ func NewTransactionRepository(db *DB) *TransactionRepository {
 	return &TransactionRepository{db: db}
 }
 
-func (r *TransactionRepository) Create(ctx context.Context, params models.CreateTransactionParams) (*models.Transaction, error) {
+func (r *TransactionRepository) Create(ctx context.Context, params transaction.CreateTransactionParams) (*transaction.Transaction, error) {
 	query := `
 		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date, type, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -24,7 +24,7 @@ func (r *TransactionRepository) Create(ctx context.Context, params models.Create
 		          provider_created_at, provider_updated_at, created_at, updated_at
 	`
 
-	var transaction models.Transaction
+	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 	err := r.db.QueryRowContext(
@@ -53,7 +53,7 @@ func (r *TransactionRepository) Create(ctx context.Context, params models.Create
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*models.Transaction, error) {
+func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at
@@ -61,7 +61,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*models
 		WHERE id = $1
 	`
 
-	var transaction models.Transaction
+	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
@@ -89,7 +89,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*models
 	return &transaction, nil
 }
 
-func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at
@@ -105,9 +105,9 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 	}
 	defer rows.Close()
 
-	var transactions []*models.Transaction
+	var transactions []*transaction.Transaction
 	for rows.Next() {
-		var transaction models.Transaction
+		var transaction transaction.Transaction
 		var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 		err := rows.Scan(
@@ -138,7 +138,7 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 	return transactions, nil
 }
 
-func (r *TransactionRepository) Update(ctx context.Context, id string, params models.UpdateTransactionParams) (*models.Transaction, error) {
+func (r *TransactionRepository) Update(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error) {
 	query := `
 		UPDATE transactions
 		SET amount = COALESCE($1, amount),
@@ -153,7 +153,7 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params mo
 		          provider_created_at, provider_updated_at, created_at, updated_at
 	`
 
-	var transaction models.Transaction
+	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 	err := r.db.QueryRowContext(
@@ -206,7 +206,7 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 }
 
 // Upsert inserts or updates a transaction (used for syncing from provider)
-func (r *TransactionRepository) Upsert(ctx context.Context, params models.UpsertTransactionParams) (*models.Transaction, error) {
+func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	query := `
 		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date, 
 		                          type, status, provider_created_at, provider_updated_at)
@@ -225,7 +225,7 @@ func (r *TransactionRepository) Upsert(ctx context.Context, params models.Upsert
 		          provider_created_at, provider_updated_at, created_at, updated_at
 	`
 
-	var transaction models.Transaction
+	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 	err := r.db.QueryRowContext(

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"parsa/internal/domain"
+	"parsa/internal/models"
 )
 
 type ItemRepository struct {
