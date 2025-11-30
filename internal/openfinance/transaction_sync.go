@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"parsa/internal/database"
+	"parsa/internal/domain/account"
 	"parsa/internal/models"
 )
 
@@ -23,7 +24,7 @@ type TransactionSyncResult struct {
 type TransactionSyncService struct {
 	client             *Client
 	userRepo           *database.UserRepository
-	accountRepo        *database.AccountRepository
+	accountService     *account.Service
 	transactionRepo    *database.TransactionRepository
 	creditCardDataRepo *database.CreditCardDataRepository
 	bankRepo           *database.BankRepository
@@ -33,7 +34,7 @@ type TransactionSyncService struct {
 func NewTransactionSyncService(
 	client *Client,
 	userRepo *database.UserRepository,
-	accountRepo *database.AccountRepository,
+	accountService *account.Service,
 	transactionRepo *database.TransactionRepository,
 	creditCardDataRepo *database.CreditCardDataRepository,
 	bankRepo *database.BankRepository,
@@ -41,7 +42,7 @@ func NewTransactionSyncService(
 	return &TransactionSyncService{
 		client:             client,
 		userRepo:           userRepo,
-		accountRepo:        accountRepo,
+		accountService:     accountService,
 		transactionRepo:    transactionRepo,
 		creditCardDataRepo: creditCardDataRepo,
 		bankRepo:           bankRepo,
@@ -76,8 +77,8 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 
 	// Build a cache of accounts for matching
 	// Key: "name|account_type|subtype" -> account
-	accountCache := make(map[string]*models.Account)
-	accounts, err := s.accountRepo.ListByUserID(ctx, userID)
+	accountCache := make(map[string]*account.Account)
+	accounts, err := s.accountService.ListAccountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"parsa/internal/database"
-	"parsa/internal/models"
+	"parsa/internal/domain/account"
 )
 
 // SyncResult contains the results of a sync operation
@@ -20,24 +20,24 @@ type SyncResult struct {
 
 // AccountSyncService handles syncing accounts from the Open Finance API
 type AccountSyncService struct {
-	client      *Client
-	userRepo    *database.UserRepository
-	accountRepo *database.AccountRepository
-	itemRepo    *database.ItemRepository
+	client         *Client
+	userRepo       *database.UserRepository
+	accountService *account.Service
+	itemRepo       *database.ItemRepository
 }
 
 // NewAccountSyncService creates a new account sync service
 func NewAccountSyncService(
 	client *Client,
 	userRepo *database.UserRepository,
-	accountRepo *database.AccountRepository,
+	accountService *account.Service,
 	itemRepo *database.ItemRepository,
 ) *AccountSyncService {
 	return &AccountSyncService{
-		client:      client,
-		userRepo:    userRepo,
-		accountRepo: accountRepo,
-		itemRepo:    itemRepo,
+		client:         client,
+		userRepo:       userRepo,
+		accountService: accountService,
+		itemRepo:       itemRepo,
 	}
 }
 
@@ -112,13 +112,13 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 	}
 
 	// Check if account exists to determine if this is create or update
-	exists, err := s.accountRepo.Exists(ctx, apiAccount.AccountID)
+	exists, err := s.accountService.AccountExists(ctx, apiAccount.AccountID)
 	if err != nil {
 		return fmt.Errorf("failed to check account existence: %w", err)
 	}
 
 	// Prepare upsert parameters
-	params := models.UpsertAccountParams{
+	params := account.UpsertParams{
 		ID:                apiAccount.AccountID,
 		UserID:            userID,
 		ItemID:            itemID,
@@ -136,7 +136,7 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 	}
 
 	// Upsert the account
-	_, err = s.accountRepo.Upsert(ctx, params)
+	_, err = s.accountService.UpsertAccount(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to upsert account: %w", err)
 	}
