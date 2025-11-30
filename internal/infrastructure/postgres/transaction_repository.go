@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"parsa/internal/domain/transaction"
 )
@@ -208,7 +209,7 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 // Upsert inserts or updates a transaction (used for syncing from provider)
 func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	query := `
-		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date, 
+		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date,
 		                          type, status, provider_created_at, provider_updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
@@ -253,4 +254,71 @@ func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.U
 	}
 
 	return &transaction, nil
+}
+
+// UpsertBatch inserts or updates multiple transactions in a single query
+// Returns the count of affected rows (inserted + updated)
+func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transaction.UpsertTransactionParams) (int64, error) {
+	if len(params) == 0 {
+		return 0, nil
+	}
+
+	// Build the VALUES clause with placeholders
+	// Each transaction has 10 fields
+	valueStrings := make([]string, 0, len(params))
+	valueArgs := make([]any, 0, len(params)*10)
+
+	for i, param := range params {
+		// Calculate placeholder positions for this row
+		offset := i * 10
+		valueStrings = append(valueStrings, fmt.Sprintf(
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			offset+1, offset+2, offset+3, offset+4, offset+5,
+			offset+6, offset+7, offset+8, offset+9, offset+10,
+		))
+
+		// Add values for this row
+		valueArgs = append(valueArgs,
+			param.ID, param.AccountID, param.Amount, param.Description, param.Category,
+			param.TransactionDate, param.Type, param.Status,
+			param.ProviderCreatedAt, param.ProviderUpdatedAt,
+		)
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date,
+		                          type, status, provider_created_at, provider_updated_at)
+		VALUES %s
+		ON CONFLICT (id) DO UPDATE SET
+		    amount = EXCLUDED.amount,
+		    description = EXCLUDED.description,
+		    category = EXCLUDED.category,
+		    transaction_date = EXCLUDED.transaction_date,
+		    type = EXCLUDED.type,
+		    status = EXCLUDED.status,
+		    provider_created_at = EXCLUDED.provider_created_at,
+		    provider_updated_at = EXCLUDED.provider_updated_at,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE
+		    transactions.amount IS DISTINCT FROM EXCLUDED.amount OR
+		    transactions.description IS DISTINCT FROM EXCLUDED.description OR
+		    transactions.category IS DISTINCT FROM EXCLUDED.category OR
+		    transactions.transaction_date IS DISTINCT FROM EXCLUDED.transaction_date OR
+		    transactions.type IS DISTINCT FROM EXCLUDED.type OR
+		    transactions.status IS DISTINCT FROM EXCLUDED.status OR
+		    transactions.provider_created_at IS DISTINCT FROM EXCLUDED.provider_created_at OR
+		    transactions.provider_updated_at IS DISTINCT FROM EXCLUDED.provider_updated_at
+	`, strings.Join(valueStrings, ", "))
+
+	result, err := r.db.ExecContext(ctx, query, valueArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to batch upsert transactions: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	return affected, nil
 }

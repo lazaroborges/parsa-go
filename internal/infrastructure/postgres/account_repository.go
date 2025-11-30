@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"parsa/internal/domain/account"
 )
@@ -264,6 +265,95 @@ func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertPar
 	}
 
 	return &acc, nil
+}
+
+// UpsertBatch inserts or updates multiple accounts in a single query
+// Returns the count of affected rows (inserted + updated)
+func (r *AccountRepository) UpsertBatch(ctx context.Context, params []account.UpsertParams) (int64, error) {
+	if len(params) == 0 {
+		return 0, nil
+	}
+
+	// Build the VALUES clause with placeholders
+	// Each account has 11 fields
+	valueStrings := make([]string, 0, len(params))
+	valueArgs := make([]any, 0, len(params)*11)
+
+	for i, param := range params {
+		// Calculate placeholder positions for this row
+		offset := i * 11
+		valueStrings = append(valueStrings, fmt.Sprintf(
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
+			offset+7, offset+8, offset+9, offset+10, offset+11,
+		))
+
+		// Convert nullable fields
+		var bankIDIn sql.NullInt64
+		if param.BankID != nil {
+			bankIDIn.Int64 = *param.BankID
+			bankIDIn.Valid = true
+		}
+		var subtypeIn sql.NullString
+		if param.Subtype != nil {
+			subtypeIn.String = *param.Subtype
+			subtypeIn.Valid = true
+		}
+		var providerUpdatedAtIn, providerCreatedAtIn sql.NullTime
+		if param.ProviderUpdatedAt != nil {
+			providerUpdatedAtIn.Time = *param.ProviderUpdatedAt
+			providerUpdatedAtIn.Valid = true
+		}
+		if param.ProviderCreatedAt != nil {
+			providerCreatedAtIn.Time = *param.ProviderCreatedAt
+			providerCreatedAtIn.Valid = true
+		}
+
+		// Add values for this row
+		valueArgs = append(valueArgs,
+			param.ID, param.UserID, nullString(param.ItemID), param.Name, param.AccountType,
+			subtypeIn, param.Currency, param.Balance, bankIDIn,
+			providerUpdatedAtIn, providerCreatedAtIn,
+		)
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO accounts (
+			id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+			provider_updated_at, provider_created_at
+		)
+		VALUES %s
+		ON CONFLICT (id)
+		DO UPDATE SET
+			name = EXCLUDED.name,
+			account_type = EXCLUDED.account_type,
+			subtype = EXCLUDED.subtype,
+			currency = EXCLUDED.currency,
+			balance = EXCLUDED.balance,
+			item_id = EXCLUDED.item_id,
+			provider_updated_at = EXCLUDED.provider_updated_at,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE
+			accounts.name IS DISTINCT FROM EXCLUDED.name OR
+			accounts.account_type IS DISTINCT FROM EXCLUDED.account_type OR
+			accounts.subtype IS DISTINCT FROM EXCLUDED.subtype OR
+			accounts.currency IS DISTINCT FROM EXCLUDED.currency OR
+			accounts.balance IS DISTINCT FROM EXCLUDED.balance OR
+			accounts.item_id IS DISTINCT FROM EXCLUDED.item_id OR
+			accounts.provider_updated_at IS DISTINCT FROM EXCLUDED.provider_updated_at
+	`, strings.Join(valueStrings, ", "))
+
+	result, err := r.db.ExecContext(ctx, query, valueArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to batch upsert accounts: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	return affected, nil
 }
 
 // Exists checks if an account with the given ID exists

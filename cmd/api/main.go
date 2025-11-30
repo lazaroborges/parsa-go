@@ -29,6 +29,8 @@ func main() {
 }
 
 func run() error {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
