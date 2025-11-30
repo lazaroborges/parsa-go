@@ -9,6 +9,9 @@ run:
 dev:
 	air
 
+test:
+	go test ./...
+
 # Build the application
 build:
 	go build -o bin/parsa cmd/api/main.go
