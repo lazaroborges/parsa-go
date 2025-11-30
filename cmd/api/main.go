@@ -14,7 +14,9 @@ import (
 	"parsa/internal/config"
 	"parsa/internal/crypto"
 	"parsa/internal/database"
+	"parsa/internal/domain/account"
 	"parsa/internal/handlers"
+	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/middleware"
 	"parsa/internal/openfinance"
 	"parsa/internal/scheduler"
@@ -50,11 +52,19 @@ func run() error {
 
 	// Initialize repositories
 	userRepo := database.NewUserRepository(db, encryptor)
-	accountRepo := database.NewAccountRepository(db)
 	transactionRepo := database.NewTransactionRepository(db)
 	itemRepo := database.NewItemRepository(db)
 	creditCardDataRepo := database.NewCreditCardDataRepository(db)
 	bankRepo := database.NewBankRepository(db)
+
+	// Initialize infrastructure layer (new architecture)
+	accountRepoPostgres := postgres.NewAccountRepository(db.DB)
+
+	// Initialize domain services (business logic layer)
+	accountService := account.NewService(accountRepoPostgres)
+
+	// Keep old repository for backward compatibility with sync services
+	accountRepo := database.NewAccountRepository(db)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -67,7 +77,8 @@ func run() error {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userRepo, googleOAuth, jwt)
 	userHandler := handlers.NewUserHandler(userRepo)
-	accountHandler := handlers.NewAccountHandler(accountRepo)
+	// Use new service-based handler (refactored architecture)
+	accountHandler := handlers.NewAccountHandler(accountService)
 	transactionHandler := handlers.NewTransactionHandler(transactionRepo, accountRepo)
 
 	// Create router
@@ -91,6 +102,7 @@ func run() error {
 	authMiddleware := middleware.Auth(jwt)
 
 	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleMe)))
+	// Use new service-based account handler (refactored architecture)
 	mux.Handle("/api/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
 	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
 	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))

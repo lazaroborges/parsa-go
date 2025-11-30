@@ -6,21 +6,23 @@ import (
 	"net/http"
 	"strings"
 
-	"parsa/internal/database"
+	"parsa/internal/domain/account"
 	"parsa/internal/middleware"
-	"parsa/internal/models"
 )
 
+// AccountHandler is the refactored handler using the service layer
 type AccountHandler struct {
-	accountRepo *database.AccountRepository
+	accountService *account.Service
 }
 
-func NewAccountHandler(accountRepo *database.AccountRepository) *AccountHandler {
-	return &AccountHandler{accountRepo: accountRepo}
+// NewAccountHandler creates a new account handler with service layer
+func NewAccountHandler(accountService *account.Service) *AccountHandler {
+	return &AccountHandler{accountService: accountService}
 }
 
+// HTTP request/response types (transport layer concerns)
 type CreateAccountRequest struct {
-	ID          string  `json:"id"` // Required: provider's account ID
+	ID          string  `json:"id"`
 	Name        string  `json:"name"`
 	AccountType string  `json:"accountType"`
 	Currency    string  `json:"currency"`
@@ -34,19 +36,22 @@ func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Extract user ID from context (set by auth middleware)
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	accounts, err := h.accountRepo.ListByUserID(r.Context(), userID)
+	// Call service (business logic)
+	accounts, err := h.accountService.ListAccountsByUserID(r.Context(), userID)
 	if err != nil {
 		log.Printf("Error listing accounts for user %d: %v", userID, err)
 		http.Error(w, "Failed to list accounts", http.StatusInternalServerError)
 		return
 	}
 
+	// Return HTTP response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(accounts)
 }
@@ -64,28 +69,15 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Parse HTTP request
 	var req CreateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Error decoding create account request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.Name == "" || req.AccountType == "" {
-		http.Error(w, "Name and accountType are required", http.StatusBadRequest)
-		return
-	}
-
-	if req.ID == "" {
-		http.Error(w, "Account ID is required", http.StatusBadRequest)
-		return
-	}
-
-	if req.Currency == "" {
-		req.Currency = "BRL"
-	}
-
-	account, err := h.accountRepo.Create(r.Context(), models.CreateAccountParams{
+	// Call service (validation and business logic handled there)
+	acc, err := h.accountService.CreateAccount(r.Context(), account.CreateParams{
 		ID:          req.ID,
 		UserID:      userID,
 		Name:        req.Name,
@@ -94,15 +86,28 @@ func (h *AccountHandler) HandleCreateAccount(w http.ResponseWriter, r *http.Requ
 		Balance:     req.Balance,
 	})
 
+	// Handle errors with appropriate HTTP status codes
 	if err != nil {
-		log.Printf("Error creating account for user %d: %v", userID, err)
-		http.Error(w, "Failed to create account", http.StatusInternalServerError)
+		switch err {
+		case account.ErrInvalidAccountType:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case account.ErrInvalidInput:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			if strings.Contains(err.Error(), "required") {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			} else {
+				log.Printf("Error creating account for user %d: %v", userID, err)
+				http.Error(w, "Failed to create account", http.StatusInternalServerError)
+			}
+		}
 		return
 	}
 
+	// Return HTTP response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(account)
+	json.NewEncoder(w).Encode(acc)
 }
 
 // HandleGetAccount returns a specific account
@@ -118,28 +123,30 @@ func (h *AccountHandler) HandleGetAccount(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Extract account ID from URL path (now a string UUID)
+	// Extract account ID from URL path
 	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
 	}
 
-	account, err := h.accountRepo.GetByID(r.Context(), accountID)
+	// Service handles ownership verification
+	acc, err := h.accountService.GetAccount(r.Context(), accountID, userID)
 	if err != nil {
-		log.Printf("Error getting account %s: %v", accountID, err)
-		http.Error(w, "Account not found", http.StatusNotFound)
-		return
-	}
-
-	// Verify ownership
-	if account.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		default:
+			log.Printf("Error getting account %s: %v", accountID, err)
+			http.Error(w, "Failed to get account", http.StatusInternalServerError)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(account)
+	json.NewEncoder(w).Encode(acc)
 }
 
 // HandleDeleteAccount deletes an account
@@ -155,29 +162,25 @@ func (h *AccountHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Extract account ID from URL path (now a string UUID)
+	// Extract account ID from URL path
 	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Verify ownership before deleting
-	account, err := h.accountRepo.GetByID(r.Context(), accountID)
+	// Service handles ownership verification and deletion
+	err := h.accountService.DeleteAccount(r.Context(), accountID, userID)
 	if err != nil {
-		log.Printf("Error getting account %s for deletion: %v", accountID, err)
-		http.Error(w, "Account not found", http.StatusNotFound)
-		return
-	}
-
-	if account.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	if err := h.accountRepo.Delete(r.Context(), accountID); err != nil {
-		log.Printf("Error deleting account %s: %v", accountID, err)
-		http.Error(w, "Failed to delete account", http.StatusInternalServerError)
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		default:
+			log.Printf("Error deleting account %s: %v", accountID, err)
+			http.Error(w, "Failed to delete account", http.StatusInternalServerError)
+		}
 		return
 	}
 
