@@ -23,6 +23,9 @@ type Client struct {
 	baseURL    string
 }
 
+// Ensure Client implements ClientInterface
+var _ ClientInterface = (*Client)(nil)
+
 // NewClient creates a new Open Finance API client
 func NewClient() *Client {
 	return &Client{
