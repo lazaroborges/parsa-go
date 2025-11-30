@@ -13,13 +13,13 @@ import (
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/infrastructure/crypto"
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/interfaces/scheduler"
 	"parsa/internal/shared/auth"
 	"parsa/internal/shared/config"
 	"parsa/internal/shared/middleware"
-	ofclient "parsa/internal/infrastructure/openfinance"
 )
 
 func main() {
@@ -58,7 +58,7 @@ func run() error {
 	bankRepo := postgres.NewBankRepository(db)
 
 	// Initialize infrastructure layer (new architecture)
-	accountRepo := postgres.NewAccountRepository(db.DB)
+	accountRepo := postgres.NewAccountRepository(db)
 
 	// Initialize domain services (business logic layer)
 	accountService := account.NewService(accountRepo)

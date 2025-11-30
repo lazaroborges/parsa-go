@@ -10,11 +10,11 @@ import (
 
 // AccountRepository implements the account.Repository interface for PostgreSQL
 type AccountRepository struct {
-	db *sql.DB
+	db *DB
 }
 
 // NewAccountRepository creates a new PostgreSQL account repository
-func NewAccountRepository(db *sql.DB) *AccountRepository {
+func NewAccountRepository(db *DB) *AccountRepository {
 	return &AccountRepository{db: db}
 }
 
@@ -30,7 +30,7 @@ func (r *AccountRepository) Create(ctx context.Context, params account.CreatePar
 	var itemID, subtype sql.NullString
 	var bankID sql.NullInt64
 
-	err := r.db.QueryRowContext(
+	err := r.db.DB.QueryRowContext(
 		ctx, query,
 		params.ID, params.UserID, nullString(params.ItemID), params.Name, params.AccountType, params.Currency, params.Balance, nullInt64(params.BankID),
 	).Scan(
@@ -70,7 +70,7 @@ func (r *AccountRepository) GetByID(ctx context.Context, id string) (*account.Ac
 	var bankID sql.NullInt64
 	var providerUpdatedAt, providerCreatedAt sql.NullTime
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := r.db.DB.QueryRowContext(ctx, query, id).Scan(
 		&acc.ID, &acc.UserID, &itemID, &acc.Name,
 		&acc.AccountType, &subtype, &acc.Currency, &acc.Balance,
 		&bankID, &providerUpdatedAt, &providerCreatedAt,
@@ -113,7 +113,7 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, userID)
+	rows, err := r.db.DB.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list accounts: %w", err)
 	}
@@ -166,7 +166,7 @@ func (r *AccountRepository) ListByUserID(ctx context.Context, userID int64) ([]*
 func (r *AccountRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM accounts WHERE id = $1`
 
-	result, err := r.db.ExecContext(ctx, query, id)
+	result, err := r.db.DB.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete account: %w", err)
 	}
@@ -232,7 +232,7 @@ func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertPar
 		providerCreatedAtIn.Valid = true
 	}
 
-	err := r.db.QueryRowContext(
+	err := r.db.DB.QueryRowContext(
 		ctx, query,
 		params.ID, params.UserID, nullString(params.ItemID), params.Name, params.AccountType,
 		subtypeIn, params.Currency, params.Balance, bankIDIn,
@@ -272,7 +272,7 @@ func (r *AccountRepository) Exists(ctx context.Context, id string) (bool, error)
 	query := `SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1)`
 
 	var exists bool
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&exists)
+	err := r.db.DB.QueryRowContext(ctx, query, id).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check account existence: %w", err)
 	}
@@ -295,7 +295,7 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 	var bankID sql.NullInt64
 	var providerUpdatedAt, providerCreatedAt sql.NullTime
 
-	err := r.db.QueryRowContext(ctx, query, userID, name, accountType, subtype).Scan(
+	err := r.db.DB.QueryRowContext(ctx, query, userID, name, accountType, subtype).Scan(
 		&acc.ID, &acc.UserID, &itemID, &acc.Name,
 		&acc.AccountType, &subtypeOut, &acc.Currency, &acc.Balance,
 		&bankID, &providerUpdatedAt, &providerCreatedAt,
@@ -333,7 +333,7 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 func (r *AccountRepository) UpdateBankID(ctx context.Context, accountID string, bankID int64) error {
 	query := `UPDATE accounts SET bank_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, bankID, accountID)
+	result, err := r.db.DB.ExecContext(ctx, query, bankID, accountID)
 	if err != nil {
 		return fmt.Errorf("failed to update account bank_id: %w", err)
 	}
