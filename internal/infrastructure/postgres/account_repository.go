@@ -199,7 +199,6 @@ func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertPar
 			currency = EXCLUDED.currency,
 			balance = EXCLUDED.balance,
 			item_id = EXCLUDED.item_id,
-			bank_id = EXCLUDED.bank_id,
 			provider_updated_at = EXCLUDED.provider_updated_at,
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
