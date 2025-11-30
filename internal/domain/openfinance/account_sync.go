@@ -1,3 +1,4 @@
+// Package openfinance provides domain services for syncing financial data
 package openfinance
 
 import (
@@ -5,8 +6,9 @@ import (
 	"fmt"
 	"log"
 
-	"parsa/internal/database"
-	"parsa/internal/models"
+	ofclient "parsa/internal/infrastructure/openfinance"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/domain/account"
 )
 
 // SyncResult contains the results of a sync operation
@@ -20,24 +22,24 @@ type SyncResult struct {
 
 // AccountSyncService handles syncing accounts from the Open Finance API
 type AccountSyncService struct {
-	client      *Client
-	userRepo    *database.UserRepository
-	accountRepo *database.AccountRepository
-	itemRepo    *database.ItemRepository
+	client         *ofclient.Client
+	userRepo       *postgres.UserRepository
+	accountService *account.Service
+	itemRepo       *postgres.ItemRepository
 }
 
 // NewAccountSyncService creates a new account sync service
 func NewAccountSyncService(
-	client *Client,
-	userRepo *database.UserRepository,
-	accountRepo *database.AccountRepository,
-	itemRepo *database.ItemRepository,
+	client *ofclient.Client,
+	userRepo *postgres.UserRepository,
+	accountService *account.Service,
+	itemRepo *postgres.ItemRepository,
 ) *AccountSyncService {
 	return &AccountSyncService{
-		client:      client,
-		userRepo:    userRepo,
-		accountRepo: accountRepo,
-		itemRepo:    itemRepo,
+		client:         client,
+		userRepo:       userRepo,
+		accountService: accountService,
+		itemRepo:       itemRepo,
 	}
 }
 
@@ -83,7 +85,7 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 }
 
 // syncAccount syncs a single account
-func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiAccount Account, result *SyncResult) error {
+func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiAccount ofclient.Account, result *SyncResult) error {
 	// Parse balance from string
 	balance, err := apiAccount.GetBalance()
 	if err != nil {
@@ -112,13 +114,13 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 	}
 
 	// Check if account exists to determine if this is create or update
-	exists, err := s.accountRepo.Exists(ctx, apiAccount.AccountID)
+	exists, err := s.accountService.AccountExists(ctx, apiAccount.AccountID)
 	if err != nil {
 		return fmt.Errorf("failed to check account existence: %w", err)
 	}
 
 	// Prepare upsert parameters
-	params := models.UpsertAccountParams{
+	params := account.UpsertParams{
 		ID:                apiAccount.AccountID,
 		UserID:            userID,
 		ItemID:            itemID,
@@ -136,7 +138,7 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 	}
 
 	// Upsert the account
-	_, err = s.accountRepo.Upsert(ctx, params)
+	_, err = s.accountService.UpsertAccount(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to upsert account: %w", err)
 	}

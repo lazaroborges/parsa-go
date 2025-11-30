@@ -1,4 +1,4 @@
-package models
+package transaction
 
 import (
 	"time"

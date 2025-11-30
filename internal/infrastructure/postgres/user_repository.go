@@ -1,12 +1,12 @@
-package database
+package postgres
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 
-	"parsa/internal/crypto"
-	"parsa/internal/models"
+	"parsa/internal/infrastructure/crypto"
+	"parsa/internal/domain/user"
 )
 
 type UserRepository struct {
@@ -22,17 +22,16 @@ func NewUserRepository(db *DB, encryptor *crypto.Encryptor) *UserRepository {
 }
 
 // decryptProviderKey decrypts the provider key if it exists
-func (r *UserRepository) decryptProviderKey(user *models.User) error {
-	if user.ProviderKey == nil || *user.ProviderKey == "" {
-
+func (r *UserRepository) decryptProviderKey(u *user.User) error {
+	if u.ProviderKey == nil || *u.ProviderKey == "" {
 		return nil
 	}
 
-	decrypted, err := r.encryptor.Decrypt(*user.ProviderKey)
+	decrypted, err := r.encryptor.Decrypt(*u.ProviderKey)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt provider key: %w", err)
 	}
-	user.ProviderKey = &decrypted
+	u.ProviderKey = &decrypted
 	return nil
 }
 
@@ -49,14 +48,14 @@ func (r *UserRepository) encryptProviderKey(providerKey *string) (*string, error
 	return &encrypted, nil
 }
 
-func (r *UserRepository) Create(ctx context.Context, params models.CreateUserParams) (*models.User, error) {
+func (r *UserRepository) Create(ctx context.Context, params user.CreateUserParams) (*user.User, error) {
 	query := `
     INSERT INTO users (email, name, first_name, last_name, avatar_url, oauth_provider, oauth_id, password_hash)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
 `
 
-	var user models.User
+	var user user.User
 	err := r.db.QueryRowContext(
 		ctx, query,
 		params.Email, params.Name, params.FirstName, params.LastName, params.AvatarURL,
@@ -74,14 +73,14 @@ func (r *UserRepository) Create(ctx context.Context, params models.CreateUserPar
 	return &user, nil
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, id int64) (*models.User, error) {
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (*user.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
 
-	var user models.User
+	var user user.User
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
@@ -102,14 +101,14 @@ func (r *UserRepository) GetByID(ctx context.Context, id int64) (*models.User, e
 	return &user, nil
 }
 
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
 
-	var user models.User
+	var user user.User
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
@@ -130,14 +129,14 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 	return &user, nil
 }
 
-func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*models.User, error) {
+func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*user.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
 		WHERE oauth_provider = $1 AND oauth_id = $2
 	`
 
-	var user models.User
+	var user user.User
 	err := r.db.QueryRowContext(ctx, query, provider, oauthID).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
@@ -158,7 +157,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 	return &user, nil
 }
 
-func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
+func (r *UserRepository) List(ctx context.Context) ([]*user.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
@@ -171,9 +170,9 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	}
 	defer rows.Close()
 
-	var users []*models.User
+	var users []*user.User
 	for rows.Next() {
-		var user models.User
+		var user user.User
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
@@ -197,7 +196,7 @@ func (r *UserRepository) List(ctx context.Context) ([]*models.User, error) {
 	return users, nil
 }
 
-func (r *UserRepository) Update(ctx context.Context, userID int64, params models.UpdateUserParams) (*models.User, error) {
+func (r *UserRepository) Update(ctx context.Context, userID int64, params user.UpdateUserParams) (*user.User, error) {
 	// Encrypt provider key if provided
 	encryptedProviderKey, err := r.encryptProviderKey(params.ProviderKey)
 	if err != nil {
@@ -216,7 +215,7 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params models
 		RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 	`
 
-	var user models.User
+	var user user.User
 	err = r.db.QueryRowContext(
 		ctx, query,
 		userID, params.Name, params.FirstName, params.LastName, params.AvatarURL, encryptedProviderKey,
@@ -241,7 +240,7 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params models
 }
 
 // ListUsersWithProviderKey retrieves all users that have a provider key set
-func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*models.User, error) {
+func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*user.User, error) {
 	query := `
 		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
 		FROM users
@@ -255,9 +254,9 @@ func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*model
 	}
 	defer rows.Close()
 
-	var users []*models.User
+	var users []*user.User
 	for rows.Next() {
-		var user models.User
+		var user user.User
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,

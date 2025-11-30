@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"encoding/json"
@@ -8,19 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"parsa/internal/database"
-	"parsa/internal/middleware"
-	"parsa/internal/models"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/shared/middleware"
+	"parsa/internal/domain/transaction"
 
 	"github.com/google/uuid"
 )
 
 type TransactionHandler struct {
-	transactionRepo *database.TransactionRepository
-	accountRepo     *database.AccountRepository
+	transactionRepo *postgres.TransactionRepository
+	accountRepo     *postgres.AccountRepository
 }
 
-func NewTransactionHandler(transactionRepo *database.TransactionRepository, accountRepo *database.AccountRepository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo *postgres.TransactionRepository, accountRepo *postgres.AccountRepository) *TransactionHandler {
 	return &TransactionHandler{
 		transactionRepo: transactionRepo,
 		accountRepo:     accountRepo,
@@ -154,7 +154,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 	// Generate UUID for manual transactions
 	txID := uuid.New().String()
 
-	transaction, err := h.transactionRepo.Create(r.Context(), models.CreateTransactionParams{
+	txn, err := h.transactionRepo.Create(r.Context(), transaction.CreateTransactionParams{
 		ID:              txID,
 		AccountID:       req.AccountID,
 		Amount:          req.Amount,
@@ -173,7 +173,7 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(transaction)
+	json.NewEncoder(w).Encode(txn)
 }
 
 // HandleGetTransaction returns a specific transaction
@@ -195,21 +195,21 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
+	txn, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
 		log.Printf("Error getting transaction %s: %v", transactionID, err)
 		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
 		return
 	}
-	if transaction == nil {
+	if txn == nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
 		return
 	}
 
 	// Verify ownership through account
-	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
+	account, err := h.accountRepo.GetByID(r.Context(), txn.AccountID)
 	if err != nil {
-		log.Printf("Error getting account %s for transaction %s: %v", transaction.AccountID, transactionID, err)
+		log.Printf("Error getting account %s for transaction %s: %v", txn.AccountID, transactionID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
@@ -220,7 +220,7 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(transaction)
+	json.NewEncoder(w).Encode(txn)
 }
 
 // HandleDeleteTransaction deletes a transaction
@@ -242,21 +242,21 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	transaction, err := h.transactionRepo.GetByID(r.Context(), transactionID)
+	txn, err := h.transactionRepo.GetByID(r.Context(), transactionID)
 	if err != nil {
 		log.Printf("Error getting transaction %s for deletion: %v", transactionID, err)
 		http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
 		return
 	}
-	if transaction == nil {
+	if txn == nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
 		return
 	}
 
 	// Verify ownership through account
-	account, err := h.accountRepo.GetByID(r.Context(), transaction.AccountID)
+	account, err := h.accountRepo.GetByID(r.Context(), txn.AccountID)
 	if err != nil {
-		log.Printf("Error getting account %s for transaction deletion: %v", transaction.AccountID, err)
+		log.Printf("Error getting account %s for transaction deletion: %v", txn.AccountID, err)
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
