@@ -7,7 +7,8 @@ import (
 	"log"
 
 	ofclient "parsa/internal/infrastructure/openfinance"
-	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/models"
+	"parsa/internal/domain/user"
 	"parsa/internal/domain/account"
 )
 
@@ -22,18 +23,18 @@ type SyncResult struct {
 
 // AccountSyncService handles syncing accounts from the Open Finance API
 type AccountSyncService struct {
-	client         *ofclient.Client
-	userRepo       *postgres.UserRepository
+	client         ofclient.ClientInterface
+	userRepo       user.Repository
 	accountService *account.Service
-	itemRepo       *postgres.ItemRepository
+	itemRepo       models.ItemRepository
 }
 
 // NewAccountSyncService creates a new account sync service
 func NewAccountSyncService(
-	client *ofclient.Client,
-	userRepo *postgres.UserRepository,
+	client ofclient.ClientInterface,
+	userRepo user.Repository,
 	accountService *account.Service,
-	itemRepo *postgres.ItemRepository,
+	itemRepo models.ItemRepository,
 ) *AccountSyncService {
 	return &AccountSyncService{
 		client:         client,

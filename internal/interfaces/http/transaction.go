@@ -8,19 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"parsa/internal/infrastructure/postgres"
-	"parsa/internal/shared/middleware"
+	"parsa/internal/domain/account"
 	"parsa/internal/domain/transaction"
+	"parsa/internal/shared/middleware"
 
 	"github.com/google/uuid"
 )
 
 type TransactionHandler struct {
-	transactionRepo *postgres.TransactionRepository
-	accountRepo     *postgres.AccountRepository
+	transactionRepo transaction.Repository
+	accountRepo     account.Repository
 }
 
-func NewTransactionHandler(transactionRepo *postgres.TransactionRepository, accountRepo *postgres.AccountRepository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository) *TransactionHandler {
 	return &TransactionHandler{
 		transactionRepo: transactionRepo,
 		accountRepo:     accountRepo,

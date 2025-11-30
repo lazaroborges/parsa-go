@@ -6,7 +6,7 @@ import (
 	"log"
 
 	ofclient "parsa/internal/infrastructure/openfinance"
-	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/domain/user"
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/models"
@@ -24,24 +24,24 @@ type TransactionSyncResult struct {
 
 // TransactionSyncService handles syncing transactions from the Open Finance API
 type TransactionSyncService struct {
-	client             *ofclient.Client
-	userRepo           *postgres.UserRepository
+	client             ofclient.ClientInterface
+	userRepo           user.Repository
 	accountService     *account.Service
-	accountRepo        *postgres.AccountRepository
-	transactionRepo    *postgres.TransactionRepository
-	creditCardDataRepo *postgres.CreditCardDataRepository
-	bankRepo           *postgres.BankRepository
+	accountRepo        account.Repository
+	transactionRepo    transaction.Repository
+	creditCardDataRepo models.CreditCardDataRepository
+	bankRepo           models.BankRepository
 }
 
 // NewTransactionSyncService creates a new transaction sync service
 func NewTransactionSyncService(
-	client *ofclient.Client,
-	userRepo *postgres.UserRepository,
+	client ofclient.ClientInterface,
+	userRepo user.Repository,
 	accountService *account.Service,
-	accountRepo *postgres.AccountRepository,
-	transactionRepo *postgres.TransactionRepository,
-	creditCardDataRepo *postgres.CreditCardDataRepository,
-	bankRepo *postgres.BankRepository,
+	accountRepo account.Repository,
+	transactionRepo transaction.Repository,
+	creditCardDataRepo models.CreditCardDataRepository,
+	bankRepo models.BankRepository,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
 		client:             client,

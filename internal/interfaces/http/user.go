@@ -5,16 +5,15 @@ import (
 	"log"
 	"net/http"
 
-	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/shared/middleware"
 	"parsa/internal/domain/user"
 )
 
 type UserHandler struct {
-	userRepo *postgres.UserRepository
+	userRepo user.Repository
 }
 
-func NewUserHandler(userRepo *postgres.UserRepository) *UserHandler {
+func NewUserHandler(userRepo user.Repository) *UserHandler {
 	return &UserHandler{userRepo: userRepo}
 }
 
