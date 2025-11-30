@@ -39,19 +39,19 @@ var (
 
 // Account represents a financial account domain entity
 type Account struct {
-	ID                string
-	UserID            int64
-	ItemID            string
-	Name              string
-	AccountType       string
-	Subtype           string
-	Currency          string
-	Balance           float64
-	BankID            int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ProviderUpdatedAt time.Time
-	ProviderCreatedAt time.Time
+	ID                string    `json:"id"`
+	UserID            int64     `json:"userId"`
+	ItemID            string    `json:"itemId"`
+	Name              string    `json:"name"`
+	AccountType       string    `json:"accountType"`
+	Subtype           string    `json:"subtype"`
+	Currency          string    `json:"currency"`
+	Balance           float64   `json:"balance"`
+	BankID            int64     `json:"bankId"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	ProviderUpdatedAt time.Time `json:"providerUpdatedAt"`
+	ProviderCreatedAt time.Time `json:"providerCreatedAt"`
 }
 
 // CreateParams contains parameters for creating a new account
