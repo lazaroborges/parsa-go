@@ -95,17 +95,10 @@ func (s *Service) AccountExists(ctx context.Context, accountID string) (bool, er
 }
 
 // FindAccountByMatch finds an account by matching criteria
+// Note: This method does not validate account type/subtype to allow matching
+// against accounts that may have been synced from external APIs with types
+// not in our predefined list. Validation only occurs during create/upsert.
 func (s *Service) FindAccountByMatch(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error) {
-	// Validate account type
-	if !IsValidAccountType(accountType) {
-		return nil, ErrInvalidAccountType
-	}
-
-	// Validate account subtype if provided
-	if subtype != "" && !IsValidAccountSubtype(subtype) {
-		return nil, ErrInvalidAccountSubtype
-	}
-
 	return s.repo.FindByMatch(ctx, userID, name, accountType, subtype)
 }
 
