@@ -12,8 +12,8 @@ import (
 )
 
 type OAuthProvider interface {
-	GetAuthURL(state string) string
-	ExchangeCode(ctx context.Context, code string) (*OAuthToken, error)
+	GetAuthURL(state string, redirectURI ...string) string
+	ExchangeCode(ctx context.Context, code string, redirectURI ...string) (*OAuthToken, error)
 	GetUserInfo(ctx context.Context, token string) (*OAuthUserInfo, error)
 }
 
@@ -52,11 +52,18 @@ func NewGoogleOAuthProvider(clientID, clientSecret, redirectURL string) *GoogleO
 	}
 }
 
-func (g *GoogleOAuthProvider) GetAuthURL(state string) string {
+func (g *GoogleOAuthProvider) GetAuthURL(state string, redirectURI ...string) string {
 	baseURL := "https://accounts.google.com/o/oauth2/v2/auth"
 	params := url.Values{}
 	params.Add("client_id", g.clientID)
-	params.Add("redirect_uri", g.redirectURL)
+
+	// Use custom redirect URI if provided, otherwise use default
+	targetRedirectURI := g.redirectURL
+	if len(redirectURI) > 0 && redirectURI[0] != "" {
+		targetRedirectURI = redirectURI[0]
+	}
+	params.Add("redirect_uri", targetRedirectURI)
+
 	params.Add("response_type", "code")
 	params.Add("scope", "openid email profile")
 	params.Add("state", state)
@@ -65,14 +72,21 @@ func (g *GoogleOAuthProvider) GetAuthURL(state string) string {
 	return baseURL + "?" + params.Encode()
 }
 
-func (g *GoogleOAuthProvider) ExchangeCode(ctx context.Context, code string) (*OAuthToken, error) {
+func (g *GoogleOAuthProvider) ExchangeCode(ctx context.Context, code string, redirectURI ...string) (*OAuthToken, error) {
 	tokenURL := "https://oauth2.googleapis.com/token"
 
 	data := url.Values{}
 	data.Set("code", code)
 	data.Set("client_id", g.clientID)
 	data.Set("client_secret", g.clientSecret)
-	data.Set("redirect_uri", g.redirectURL)
+
+	// Use custom redirect URI if provided, otherwise use default
+	targetRedirectURI := g.redirectURL
+	if len(redirectURI) > 0 && redirectURI[0] != "" {
+		targetRedirectURI = redirectURI[0]
+	}
+	data.Set("redirect_uri", targetRedirectURI)
+
 	data.Set("grant_type", "authorization_code")
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
