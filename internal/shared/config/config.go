@@ -38,9 +38,10 @@ type OAuthConfig struct {
 }
 
 type GoogleOAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
+	ClientID            string
+	ClientSecret        string
+	WebCallbackURL      string
+	MobileCallbackURL   string
 }
 
 type JWTConfig struct {
@@ -125,9 +126,10 @@ func Load() (*Config, error) {
 		},
 		OAuth: OAuthConfig{
 			Google: GoogleOAuthConfig{
-				ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
-				ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-				RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+				ClientID:          getEnv("GOOGLE_CLIENT_ID", ""),
+				ClientSecret:      getEnv("GOOGLE_CLIENT_SECRET", ""),
+				WebCallbackURL:    getEnv("GOOGLE_WEB_CALLBACK_URL", ""),
+				MobileCallbackURL: getEnv("GOOGLE_MOBILE_CALLBACK_URL", ""),
 			},
 		},
 		JWT: JWTConfig{

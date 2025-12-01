@@ -8,22 +8,26 @@ import (
 	"log"
 	"net/http"
 
-	"parsa/internal/shared/auth"
-	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/domain/user"
+	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/shared/auth"
 )
 
 type AuthHandler struct {
-	userRepo      *postgres.UserRepository
-	oauthProvider auth.OAuthProvider
-	jwt           *auth.JWT
+	userRepo          *postgres.UserRepository
+	oauthProvider     auth.OAuthProvider
+	jwt               *auth.JWT
+	mobileCallbackURL string
+	webCallbackURL    string
 }
 
-func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT) *AuthHandler {
+func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, mobileCallbackURL, webCallbackURL string) *AuthHandler {
 	return &AuthHandler{
-		userRepo:      userRepo,
-		oauthProvider: oauthProvider,
-		jwt:           jwt,
+		userRepo:          userRepo,
+		oauthProvider:     oauthProvider,
+		jwt:               jwt,
+		mobileCallbackURL: mobileCallbackURL,
+		webCallbackURL:    webCallbackURL,
 	}
 }
 
@@ -37,11 +41,11 @@ type AuthCallbackRequest struct {
 }
 
 type AuthResponse struct {
-	Token string       `json:"token"`
+	Token string     `json:"token"`
 	User  *user.User `json:"user"`
 }
 
-// HandleAuthURL generates the OAuth authorization URL
+// HandleAuthURL generates the OAuth authorization URL (for web)
 func (h *AuthHandler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -61,15 +65,50 @@ func (h *AuthHandler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(AuthURLResponse{URL: authURL})
 }
 
-// HandleCallback processes the OAuth callback and issues a JWT
+// HandleMobileAuthStart generates OAuth URL for mobile app
+func (h *AuthHandler) HandleMobileAuthStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	state, err := generateState()
+	if err != nil {
+		log.Printf("Error generating OAuth state: %v", err)
+		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
+		return
+	}
+
+	// Generate OAuth URL with mobile callback URL
+	authURL := h.oauthProvider.GetAuthURL(state, h.mobileCallbackURL)
+	log.Printf("Mobile OAuth: Generated auth URL with callback: %s", h.mobileCallbackURL)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AuthURLResponse{URL: authURL})
+}
+
+func generateState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// HandleCallback processes the OAuth callback for web (issues a JWT and sets cookie)
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Get code and state from query parameters
 	code := r.URL.Query().Get("code")
+	oauthError := r.URL.Query().Get("error")
+
+	if oauthError != "" {
+		http.Error(w, fmt.Sprintf("OAuth error: %s", oauthError), http.StatusBadRequest)
+		return
+	}
 
 	if code == "" {
 		http.Error(w, "Code is required", http.StatusBadRequest)
@@ -79,7 +118,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Exchange code for token
-	token, err := h.oauthProvider.ExchangeCode(ctx, code)
+	token, err := h.oauthProvider.ExchangeCode(ctx, code, h.webCallbackURL)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to exchange code: %v", err), http.StatusBadRequest)
 		return
@@ -123,8 +162,94 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Set HttpOnly cookie with JWT
 	setAuthCookie(w, r, jwtToken)
 
-	// Redirect to callback page - client will fetch user data via authenticated API
+	// Redirect to callback page
 	http.Redirect(w, r, "/oauth-callback", http.StatusFound)
+}
+
+// HandleMobileAuthCallback processes OAuth callback for mobile (returns JSON with JWT)
+func (h *AuthHandler) HandleMobileAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	oauthError := r.URL.Query().Get("error")
+
+	if oauthError != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": oauthError})
+		return
+	}
+
+	if code == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "code_required"})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Exchange code for token (using mobile callback URL)
+	token, err := h.oauthProvider.ExchangeCode(ctx, code, h.mobileCallbackURL)
+	if err != nil {
+		log.Printf("Mobile OAuth: Failed to exchange code: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "token_exchange_failed"})
+		return
+	}
+
+	// Get user info from OAuth provider
+	userInfo, err := h.oauthProvider.GetUserInfo(ctx, token.AccessToken)
+	if err != nil {
+		log.Printf("Mobile OAuth: Failed to get user info: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "user_info_failed"})
+		return
+	}
+
+	// Find or create user
+	userModel, err := h.userRepo.GetByOAuth(ctx, "google", userInfo.ID)
+	if err != nil {
+		// User doesn't exist, create new user
+		provider := "google"
+		userModel, err = h.userRepo.Create(ctx, user.CreateUserParams{
+			Email:         userInfo.Email,
+			Name:          userInfo.Name,
+			OAuthProvider: &provider,
+			OAuthID:       &userInfo.ID,
+			FirstName:     userInfo.FirstName,
+			LastName:      userInfo.LastName,
+			AvatarURL:     &userInfo.AvatarURL,
+		})
+		if err != nil {
+			log.Printf("Mobile OAuth: Failed to create user: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "user_creation_failed"})
+			return
+		}
+	}
+
+	// Generate JWT
+	jwtToken, err := h.jwt.Generate(userModel.ID, userModel.Email)
+	if err != nil {
+		log.Printf("Mobile OAuth: Error generating JWT for user %d: %v", userModel.ID, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "jwt_generation_failed"})
+		return
+	}
+
+	log.Printf("Mobile OAuth: Successfully authenticated user %d (%s) with callback URL: %s", userModel.ID, userModel.Email, h.mobileCallbackURL)
+
+	// Redirect to mobile app with token
+	redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", jwtToken)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 type RegisterRequest struct {
@@ -278,14 +403,6 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func generateState() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 // setAuthCookie sets the JWT as an HttpOnly cookie

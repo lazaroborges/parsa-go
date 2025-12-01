@@ -70,11 +70,11 @@ func run() error {
 	googleOAuth := auth.NewGoogleOAuthProvider(
 		cfg.OAuth.Google.ClientID,
 		cfg.OAuth.Google.ClientSecret,
-		cfg.OAuth.Google.RedirectURL,
+		cfg.OAuth.Google.WebCallbackURL,
 	)
 
 	// Initialize handlers
-	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt)
+	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL)
 	userHandler := httphandlers.NewUserHandler(userRepo)
 	// Use new service-based handler (refactored architecture)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
@@ -93,8 +93,15 @@ func run() error {
 	mux.HandleFunc("/api/auth/register", authHandler.HandleRegister)
 	mux.HandleFunc("/api/auth/login", authHandler.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", authHandler.HandleLogout)
+
+	// Web OAuth
 	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
 	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
+
+	// Mobile OAuth
+	mux.HandleFunc("/api/auth/oauth/mobile/start", authHandler.HandleMobileAuthStart)
+	mux.HandleFunc("/api/auth/oauth/mobile/callback", authHandler.HandleMobileAuthCallback)
+
 	mux.HandleFunc("/health", handleHealth)
 
 	// Protected routes - wrap with auth middleware
