@@ -143,8 +143,12 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIResponse {
 	// Amount should be absolute value
 	amount := txn.Amount
-	if amount < 0 {
+	if txn.Type == "DEBIT" {
 		amount = -amount
+	} else if txn.Type == "CREDIT" {
+		amount = amount
+	} else {
+		amount = amount
 	}
 
 	return TransactionAPIResponse{
