@@ -40,7 +40,7 @@ type AccountResponse struct {
 	InitialValue  float64  `json:"initialValue"`
 	CreatedAt     string   `json:"createdAt"`
 	UpdatedAt     string   `json:"updatedAt"`
-	ConnectorID   string   `json:"connectorId"`
+	ConnectorID   string   `json:"connectorID"`
 	PrimaryColor  string   `json:"primaryColor"`
 	Balance       *float64 `json:"balance"`
 	IsOpenFinance bool     `json:"isOpenFinance"`
@@ -157,9 +157,19 @@ func toAccountResponse(acc *account.AccountWithBank) AccountResponse {
 	// Map subtype to mobile account_type
 	accountType := mapAccountType(acc.Subtype)
 
-	// Build bank_name with suffix based on subtype
-	bankName := buildBankName(acc)
+	// bankName is just the ui_name (or name if ui_name is empty)
+	bankName := acc.BankUIName
+	if bankName == "" {
+		bankName = acc.BankName
+	}
+	if bankName == "" {
+		bankName = "Unknown Bank"
+	}
 
+	// Name uses the concatenation logic (ui_name + suffix based on subtype)
+	accountName := buildAccountName(acc)
+
+	log.Printf("BankConnector: %s, BankPrimaryColor: %s, type: %T", acc.BankConnector, acc.BankPrimaryColor, acc.BankConnector)
 	// Get connector_id (default to "1" if empty)
 	connectorID := acc.BankConnector
 	if connectorID == "" {
@@ -191,7 +201,7 @@ func toAccountResponse(acc *account.AccountWithBank) AccountResponse {
 		BankName:      bankName,
 		AccountType:   accountType,
 		Number:        "", // empty for now
-		Name:          acc.Name,
+		Name:          accountName,
 		InitialValue:  acc.InitialBalance,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
@@ -222,24 +232,25 @@ func mapAccountType(subtype string) string {
 	}
 }
 
-// buildBankName constructs the display name for the bank
-func buildBankName(acc *account.AccountWithBank) string {
+// buildAccountName constructs the display name for the account
+// Uses bank ui_name + suffix based on account subtype
+func buildAccountName(acc *account.AccountWithBank) string {
 	// Use ui_name if available, otherwise fall back to name
 	baseName := acc.BankUIName
 	if baseName == "" {
 		baseName = acc.BankName
 	}
 	if baseName == "" {
-		baseName = "Unknown Bank"
+		baseName = ""
 	}
 
 	// Append suffix based on subtype
 	switch acc.Subtype {
 	case "SAVINGS_ACCOUNT":
-		return baseName + " - Poupança"
+		return "Poupança"
 	case "CREDIT_CARD":
-		return baseName + " - " + acc.Name
+		return acc.Name
 	default:
-		return baseName + " - Conta Corrente"
+		return "Conta Corrente"
 	}
 }

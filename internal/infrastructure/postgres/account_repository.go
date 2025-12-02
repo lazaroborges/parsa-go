@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"parsa/internal/domain/account"
+
+	"github.com/lib/pq"
 )
 
 // AccountRepository implements the account.Repository interface for PostgreSQL
@@ -520,6 +522,28 @@ func (r *AccountRepository) ListByUserIDWithBank(ctx context.Context, userID int
 	}
 
 	return accounts, nil
+}
+
+// GetBalanceSumBySubtype calculates the sum of absolute balances for accounts with specific subtypes
+func (r *AccountRepository) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+	if len(subtypes) == 0 {
+		return 0, nil
+	}
+
+	// Build the query using PostgreSQL's ANY operator with array parameter
+	query := `
+		SELECT COALESCE(SUM(ABS(balance)), 0)
+		FROM accounts
+		WHERE user_id = $1 AND subtype = ANY($2)
+	`
+
+	var sum float64
+	err := r.db.QueryRowContext(ctx, query, userID, pq.Array(subtypes)).Scan(&sum)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate balance sum by subtype: %w", err)
+	}
+
+	return sum, nil
 }
 
 // Helper functions

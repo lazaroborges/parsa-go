@@ -75,7 +75,7 @@ func run() error {
 
 	// Initialize handlers
 	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL)
-	userHandler := httphandlers.NewUserHandler(userRepo)
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo)
 	// Use new service-based handler (refactored architecture)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)

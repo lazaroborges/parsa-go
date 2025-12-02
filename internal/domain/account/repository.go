@@ -31,4 +31,7 @@ type Repository interface {
 
 	// UpdateBankID updates the bank_id for an account
 	UpdateBankID(ctx context.Context, accountID string, bankID int64) error
+
+	// GetBalanceSumBySubtype calculates the sum of absolute balances for accounts with specific subtypes
+	GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error)
 }
