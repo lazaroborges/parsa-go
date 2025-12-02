@@ -2,7 +2,9 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +16,37 @@ import (
 
 	"github.com/google/uuid"
 )
+
+const pageSize = 100
+
+// TransactionListResponse is the paginated response for transaction list
+type TransactionListResponse struct {
+	Count    int64                    `json:"count"`
+	Next     *string                  `json:"next"`
+	Previous *string                  `json:"previous"`
+	Results  []TransactionAPIResponse `json:"results"`
+}
+
+// TransactionAPIResponse is the API response format for a transaction
+type TransactionAPIResponse struct {
+	ID                  string   `json:"id"`
+	Description         string   `json:"description"`
+	Amount              float64  `json:"amount"`
+	Notes               *string  `json:"notes"`
+	Currency            string   `json:"currency"`
+	Account             string   `json:"account"`
+	Category            string   `json:"category"`
+	Type                string   `json:"type"`
+	TransactionDate     string   `json:"transactionDate"`
+	Status              string   `json:"status"`
+	Considered          bool     `json:"considered"`
+	IsOpenFinance       bool     `json:"isOpenFinance"`
+	Tags                []string `json:"tags"`
+	Manipulated         bool     `json:"manipulated"`
+	LastUpdateDateParsa string   `json:"lastUpdateDateParsa"`
+	Cousin              *string  `json:"cousin"`
+	DontAskAgain        bool     `json:"dont_ask_again"`
+}
 
 type TransactionHandler struct {
 	transactionRepo transaction.Repository
@@ -37,7 +70,7 @@ type CreateTransactionRequest struct {
 	Status          string  `json:"status,omitempty"` // PENDING or POSTED, defaults to POSTED
 }
 
-// HandleListTransactions returns transactions for a specific account
+// HandleListTransactions returns paginated transactions for a user (optionally filtered by account)
 func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -50,50 +83,101 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	accountID := r.URL.Query().Get("accountId")
-	if accountID == "" {
-		http.Error(w, "accountId is required", http.StatusBadRequest)
-		return
-	}
-
-	// Verify account ownership
-	account, err := h.accountRepo.GetByID(r.Context(), accountID)
-	if err != nil {
-		log.Printf("Error getting account %s for transaction list: %v", accountID, err)
-		http.Error(w, "Account not found", http.StatusNotFound)
-		return
-	}
-
-	if account.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	// Parse pagination parameters
-	limit := 50
-	offset := 0
-
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
-			limit = parsedLimit
+	// Parse page parameter (default 1)
+	page := 1
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if parsedPage, err := strconv.Atoi(pageStr); err == nil && parsedPage > 0 {
+			page = parsedPage
 		}
 	}
 
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
-			offset = parsedOffset
-		}
+	offset := (page - 1) * pageSize
+
+	// Get total count and transactions
+	count, err := h.transactionRepo.CountByUserID(r.Context(), userID)
+	if err != nil {
+		log.Printf("Error counting transactions for user %d: %v", userID, err)
+		http.Error(w, "Failed to count transactions", http.StatusInternalServerError)
+		return
 	}
 
-	transactions, err := h.transactionRepo.ListByAccountID(r.Context(), accountID, limit, offset)
+	transactions, err := h.transactionRepo.ListByUserID(r.Context(), userID, pageSize, offset)
 	if err != nil {
-		log.Printf("Error listing transactions for account %s: %v", accountID, err)
+		log.Printf("Error listing transactions for user %d: %v", userID, err)
 		http.Error(w, "Failed to list transactions", http.StatusInternalServerError)
 		return
 	}
 
+	// Build pagination URLs
+	baseURL := fmt.Sprintf("%s://%s%s", getScheme(r), r.Host, r.URL.Path)
+	totalPages := int(math.Ceil(float64(count) / float64(pageSize)))
+
+	var next, previous *string
+	if page < totalPages {
+		nextURL := fmt.Sprintf("%s?page=%d", baseURL, page+1)
+		next = &nextURL
+	}
+	if page > 1 {
+		prevURL := fmt.Sprintf("%s?page=%d", baseURL, page-1)
+		previous = &prevURL
+	}
+
+	// Transform transactions to API response format
+	results := make([]TransactionAPIResponse, 0, len(transactions))
+	for _, txn := range transactions {
+		results = append(results, toTransactionAPIResponse(txn))
+	}
+
+	response := TransactionListResponse{
+		Count:    count,
+		Next:     next,
+		Previous: previous,
+		Results:  results,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(transactions)
+	json.NewEncoder(w).Encode(response)
+}
+
+// toTransactionAPIResponse converts a domain Transaction to the API response format
+func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIResponse {
+	// Amount should be absolute value
+	amount := txn.Amount
+	if amount < 0 {
+		amount = -amount
+	}
+
+	return TransactionAPIResponse{
+		ID:                  txn.ID,
+		Description:         txn.Description,
+		Amount:              amount,
+		Notes:               nil, // Not stored yet
+		Currency:            "BRL",
+		Account:             txn.AccountID,
+		Category:            txn.OriginalCategory,
+		Type:                strings.ToLower(txn.Type),
+		TransactionDate:     txn.TransactionDate.Format(time.RFC3339),
+		Status:              strings.ToLower(txn.Status),
+		Considered:          txn.Considered,
+		IsOpenFinance:       txn.IsOpenFinance,
+		Tags:                []string{}, // Return empty array for now
+		Manipulated:         txn.Manipulated,
+		LastUpdateDateParsa: txn.UpdatedAt.Format(time.RFC3339),
+		Cousin:              nil,   // Return null for now
+		DontAskAgain:        false, // Default false
+	}
+}
+
+// getScheme returns the request scheme (http or https)
+func getScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	// Check X-Forwarded-Proto header for proxy support
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	return "http"
 }
 
 // HandleCreateTransaction creates a new transaction

@@ -110,8 +110,8 @@ func run() error {
 	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleMe)))
 	// Account routes - single handler for all /api/accounts/ paths
 	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleAccounts)))
-	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
-	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
+	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
+	mux.Handle("/api/transactions/:id", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware
 	handler := middleware.Logging(middleware.CORS(cfg.Server.AllowedHosts)(mux))

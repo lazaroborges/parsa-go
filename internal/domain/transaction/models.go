@@ -17,6 +17,11 @@ type Transaction struct {
 	ProviderUpdatedAt time.Time `json:"providerUpdatedAt,omitempty"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
+	Considered        bool      `json:"considered"`
+	IsOpenFinance     bool      `json:"isOpenFinance"`
+	Tags              []string  `json:"tags"`
+	Manipulated       bool      `json:"manipulated"`
+	OriginalCategory  string    `json:"originalCategory"`
 }
 
 type CreateTransactionParams struct {
