@@ -158,7 +158,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Notes:               nil, // Not stored yet
 		Currency:            "BRL",
 		Account:             txn.AccountID,
-		Category:            txn.OriginalCategory,
+		Category:            *txn.Category,
 		Type:                strings.ToLower(txn.Type),
 		TransactionDate:     txn.TransactionDate.Format(time.RFC3339),
 		Status:              strings.ToLower(txn.Status),

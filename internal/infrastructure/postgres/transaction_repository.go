@@ -83,10 +83,6 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 		txn.ProviderUpdatedAt = providerUpdatedAt.Time
 	}
 	txn.Tags = parsePostgresArray(tags)
-	// OriginalCategory maps to category
-	if txn.Category != nil {
-		txn.OriginalCategory = *txn.Category
-	}
 
 	if err == sql.ErrNoRows {
 		return nil, nil // Not found
@@ -185,9 +181,6 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 			txn.ProviderUpdatedAt = providerUpdatedAt.Time
 		}
 		txn.Tags = parsePostgresArray(tags)
-		if txn.Category != nil {
-			txn.OriginalCategory = *txn.Category
-		}
 
 		transactions = append(transactions, &txn)
 	}
