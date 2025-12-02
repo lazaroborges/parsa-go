@@ -94,6 +94,18 @@ func TestHandleMe_Get(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:   "Success with Balance Sum",
+			userID: 1,
+			mockRepo: func() *MockUserRepo {
+				return &MockUserRepo{
+					GetByIDFunc: func(ctx context.Context, id int64) (*user.User, error) {
+						return &user.User{ID: id, Email: "test@example.com"}, nil
+					},
+				}
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
 			name:   "User Not Found",
 			userID: 999,
 			mockRepo: func() *MockUserRepo {
@@ -110,7 +122,12 @@ func TestHandleMe_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mockRepo()
-			handler := NewUserHandler(repo)
+			accountRepo := &MockAccountRepo{
+				GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+					return 0, nil // Return 0 for balance calculations in tests
+				},
+			}
+			handler := NewUserHandler(repo, accountRepo)
 
 			req, _ := http.NewRequest(http.MethodGet, "/api/users/me", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
@@ -195,7 +212,12 @@ func TestHandleMe_Patch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mockRepo()
-			handler := NewUserHandler(repo)
+			accountRepo := &MockAccountRepo{
+				GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+					return 0, nil // Return 0 for balance calculations in tests
+				},
+			}
+			handler := NewUserHandler(repo, accountRepo)
 
 			bodyBytes, _ := json.Marshal(tt.body)
 			req, _ := http.NewRequest(http.MethodPatch, "/api/users/me", bytes.NewBuffer(bodyBytes))
@@ -214,7 +236,12 @@ func TestHandleMe_Patch(t *testing.T) {
 
 func TestHandleMe_MethodNotAllowed(t *testing.T) {
 	repo := &MockUserRepo{}
-	handler := NewUserHandler(repo)
+	accountRepo := &MockAccountRepo{
+		GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+			return 0, nil // Return 0 for balance calculations in tests
+		},
+	}
+	handler := NewUserHandler(repo, accountRepo)
 
 	req, _ := http.NewRequest(http.MethodDelete, "/api/users/me", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, int64(1))

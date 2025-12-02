@@ -89,21 +89,31 @@ func (m *MockUserRepo) ListUsersWithProviderKey(ctx context.Context) ([]*user.Us
 
 // MockAccountRepo for Service
 type MockAccountRepo struct {
-	CreateFunc               func(ctx context.Context, params account.CreateParams) (*account.Account, error)
-	GetByIDFunc              func(ctx context.Context, id string) (*account.Account, error)
-	ListByUserIDFunc         func(ctx context.Context, userID int64) ([]*account.Account, error)
-	ListByUserIDWithBankFunc func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
-	DeleteFunc               func(ctx context.Context, id string) error
-	UpsertFunc               func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
-	ExistsFunc               func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc          func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
-	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc                 func(ctx context.Context, params account.CreateParams) (*account.Account, error)
+	GetByIDFunc                func(ctx context.Context, id string) (*account.Account, error)
+	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*account.Account, error)
+	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
+	DeleteFunc                 func(ctx context.Context, id string) error
+	UpsertFunc                 func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
+	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
+	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
+	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+}
+
+func (m *MockAccountRepo) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+	if m.GetBalanceSumBySubtypeFunc != nil {
+		return m.GetBalanceSumBySubtypeFunc(ctx, userID, subtypes)
+	}
+	return 0, nil
 }
 
 func (m *MockAccountRepo) Create(ctx context.Context, params account.CreateParams) (*account.Account, error) {
 	return nil, nil
 }
-func (m *MockAccountRepo) GetByID(ctx context.Context, id string) (*account.Account, error) { return nil, nil }
+func (m *MockAccountRepo) GetByID(ctx context.Context, id string) (*account.Account, error) {
+	return nil, nil
+}
 func (m *MockAccountRepo) ListByUserID(ctx context.Context, userID int64) ([]*account.Account, error) {
 	if m.ListByUserIDFunc != nil {
 		return m.ListByUserIDFunc(ctx, userID)
@@ -257,7 +267,7 @@ func TestSyncUserAccounts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			accRepo := tt.mockAccount()
 			accService := account.NewService(accRepo)
-			
+
 			svc := NewAccountSyncService(
 				tt.mockClient(),
 				tt.mockUser(),

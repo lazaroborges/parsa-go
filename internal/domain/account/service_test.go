@@ -20,6 +20,11 @@ type MockRepository struct {
 	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
 }
 
+// GetBalanceSumBySubtype implements Repository.
+func (m *MockRepository) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+	panic("unimplemented")
+}
+
 func (m *MockRepository) Create(ctx context.Context, params CreateParams) (*Account, error) {
 	if m.CreateFunc != nil {
 		return m.CreateFunc(ctx, params)
@@ -168,6 +173,25 @@ func TestCreateAccount(t *testing.T) {
 				}
 			},
 			wantErr: true,
+		},
+		{
+			name: "Success with Balance Sum",
+			params: CreateParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "BANK",
+				Currency:    "USD",
+				Balance:     100.0,
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{
+					CreateFunc: func(ctx context.Context, params CreateParams) (*Account, error) {
+						return &Account{ID: params.ID, UserID: params.UserID, Name: params.Name, AccountType: params.AccountType, Currency: params.Currency, Balance: params.Balance, CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
+					},
+				}
+			},
+			wantErr: false,
 		},
 	}
 
