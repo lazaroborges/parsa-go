@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	ofclient "parsa/internal/infrastructure/openfinance"
-	"parsa/internal/domain/user"
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/transaction"
+	"parsa/internal/domain/user"
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
 )
 
