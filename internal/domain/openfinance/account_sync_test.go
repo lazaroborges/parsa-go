@@ -89,14 +89,15 @@ func (m *MockUserRepo) ListUsersWithProviderKey(ctx context.Context) ([]*user.Us
 
 // MockAccountRepo for Service
 type MockAccountRepo struct {
-	CreateFunc       func(ctx context.Context, params account.CreateParams) (*account.Account, error)
-	GetByIDFunc      func(ctx context.Context, id string) (*account.Account, error)
-	ListByUserIDFunc func(ctx context.Context, userID int64) ([]*account.Account, error)
-	DeleteFunc       func(ctx context.Context, id string) error
-	UpsertFunc       func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
-	ExistsFunc       func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc  func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
-	UpdateBankIDFunc func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc               func(ctx context.Context, params account.CreateParams) (*account.Account, error)
+	GetByIDFunc              func(ctx context.Context, id string) (*account.Account, error)
+	ListByUserIDFunc         func(ctx context.Context, userID int64) ([]*account.Account, error)
+	ListByUserIDWithBankFunc func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
+	DeleteFunc               func(ctx context.Context, id string) error
+	UpsertFunc               func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
+	ExistsFunc               func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc          func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
+	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
 }
 
 func (m *MockAccountRepo) Create(ctx context.Context, params account.CreateParams) (*account.Account, error) {
@@ -127,6 +128,12 @@ func (m *MockAccountRepo) FindByMatch(ctx context.Context, userID int64, name, a
 }
 func (m *MockAccountRepo) UpdateBankID(ctx context.Context, accountID string, bankID int64) error {
 	return nil
+}
+func (m *MockAccountRepo) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
+	if m.ListByUserIDWithBankFunc != nil {
+		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
 }
 
 func TestSyncUserAccounts(t *testing.T) {
