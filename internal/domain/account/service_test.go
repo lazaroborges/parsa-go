@@ -9,20 +9,24 @@ import (
 
 // MockRepository is a mock implementation of Repository interface
 type MockRepository struct {
-	CreateFunc               func(ctx context.Context, params CreateParams) (*Account, error)
-	GetByIDFunc              func(ctx context.Context, id string) (*Account, error)
-	ListByUserIDFunc         func(ctx context.Context, userID int64) ([]*Account, error)
-	ListByUserIDWithBankFunc func(ctx context.Context, userID int64) ([]*AccountWithBank, error)
-	DeleteFunc               func(ctx context.Context, id string) error
-	UpsertFunc               func(ctx context.Context, params UpsertParams) (*Account, error)
-	ExistsFunc               func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc          func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
-	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc                 func(ctx context.Context, params CreateParams) (*Account, error)
+	GetByIDFunc                func(ctx context.Context, id string) (*Account, error)
+	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*Account, error)
+	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*AccountWithBank, error)
+	DeleteFunc                 func(ctx context.Context, id string) error
+	UpsertFunc                 func(ctx context.Context, params UpsertParams) (*Account, error)
+	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
+	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
+	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
 }
 
 // GetBalanceSumBySubtype implements Repository.
 func (m *MockRepository) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
-	panic("unimplemented")
+	if m.GetBalanceSumBySubtypeFunc != nil {
+		return m.GetBalanceSumBySubtypeFunc(ctx, userID, subtypes)
+	}
+	return 0, nil
 }
 
 func (m *MockRepository) Create(ctx context.Context, params CreateParams) (*Account, error) {

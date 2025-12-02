@@ -53,19 +53,13 @@ type AccountResponse struct {
 }
 
 // HandleAccounts is the single entry point for /api/accounts/ routes
-// Routes: GET /api/accounts/ -> list, GET /api/accounts/{id} -> get, DELETE /api/accounts/{id} -> delete
 func (h *AccountHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
-	// Extract account ID from path (empty string means list all)
 	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
-	accountID = strings.TrimSuffix(accountID, "/") // normalize trailing slash
+	accountID = strings.TrimSuffix(accountID, "/")
 
 	switch r.Method {
 	case http.MethodGet:
-		if accountID == "" {
-			h.handleListAccounts(w, r)
-		} else {
-			h.handleGetAccount(w, r, accountID)
-		}
+		h.handleGetAccounts(w, r, accountID)
 	case http.MethodDelete:
 		if accountID == "" {
 			http.Error(w, "Account ID is required", http.StatusBadRequest)
@@ -77,8 +71,9 @@ func (h *AccountHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handleListAccounts returns all accounts for the authenticated user
-func (h *AccountHandler) handleListAccounts(w http.ResponseWriter, r *http.Request) {
+// handleGetAccounts returns accounts for the authenticated user
+// If accountID is empty, returns all accounts; otherwise returns the specific account
+func (h *AccountHandler) handleGetAccounts(w http.ResponseWriter, r *http.Request, accountID string) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -92,6 +87,25 @@ func (h *AccountHandler) handleListAccounts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// If specific account requested, filter
+	if accountID != "" {
+		var found *account.AccountWithBank
+		for _, acc := range accounts {
+			if acc.ID == accountID {
+				found = acc
+				break
+			}
+		}
+		if found == nil {
+			http.Error(w, "Account not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(toAccountResponse(found))
+		return
+	}
+
+	// Return all accounts
 	response := make([]AccountResponse, 0, len(accounts))
 	for _, acc := range accounts {
 		response = append(response, toAccountResponse(acc))
@@ -99,32 +113,6 @@ func (h *AccountHandler) handleListAccounts(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-// handleGetAccount returns a specific account
-func (h *AccountHandler) handleGetAccount(w http.ResponseWriter, r *http.Request, accountID string) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	acc, err := h.accountService.GetAccount(r.Context(), accountID, userID)
-	if err != nil {
-		switch err {
-		case account.ErrAccountNotFound:
-			http.Error(w, "Account not found", http.StatusNotFound)
-		case account.ErrForbidden:
-			http.Error(w, "Forbidden", http.StatusForbidden)
-		default:
-			log.Printf("Error getting account %s: %v", accountID, err)
-			http.Error(w, "Failed to get account", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(acc)
 }
 
 // handleDeleteAccount deletes an account
@@ -169,7 +157,6 @@ func toAccountResponse(acc *account.AccountWithBank) AccountResponse {
 	// Name uses the concatenation logic (ui_name + suffix based on subtype)
 	accountName := buildAccountName(acc)
 
-	log.Printf("BankConnector: %s, BankPrimaryColor: %s, type: %T", acc.BankConnector, acc.BankPrimaryColor, acc.BankConnector)
 	// Get connector_id (default to "1" if empty)
 	connectorID := acc.BankConnector
 	if connectorID == "" {
@@ -233,17 +220,9 @@ func mapAccountType(subtype string) string {
 }
 
 // buildAccountName constructs the display name for the account
-// Uses bank ui_name + suffix based on account subtype
+// Uses suffix based on account subtype
 func buildAccountName(acc *account.AccountWithBank) string {
 	// Use ui_name if available, otherwise fall back to name
-	baseName := acc.BankUIName
-	if baseName == "" {
-		baseName = acc.BankName
-	}
-	if baseName == "" {
-		baseName = ""
-	}
-
 	// Append suffix based on subtype
 	switch acc.Subtype {
 	case "SAVINGS_ACCOUNT":

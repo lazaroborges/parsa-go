@@ -534,7 +534,7 @@ func (r *AccountRepository) GetBalanceSumBySubtype(ctx context.Context, userID i
 	query := `
 		SELECT COALESCE(SUM(ABS(balance)), 0)
 		FROM accounts
-		WHERE user_id = $1 AND subtype = ANY($2)
+		WHERE user_id = $1 AND subtype = ANY($2) AND removed = false AND hidden_by_user = false
 	`
 
 	var sum float64
