@@ -81,7 +81,6 @@ func (h *AuthHandler) HandleMobileAuthStart(w http.ResponseWriter, r *http.Reque
 
 	// Generate OAuth URL with mobile callback URL
 	authURL := h.oauthProvider.GetAuthURL(state, h.mobileCallbackURL)
-	log.Printf("Mobile OAuth: Generated auth URL with callback: %s", h.mobileCallbackURL)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthURLResponse{URL: authURL})
@@ -244,8 +243,6 @@ func (h *AuthHandler) HandleMobileAuthCallback(w http.ResponseWriter, r *http.Re
 		json.NewEncoder(w).Encode(map[string]string{"error": "jwt_generation_failed"})
 		return
 	}
-
-	log.Printf("Mobile OAuth: Successfully authenticated user %d (%s) with callback URL: %s", userModel.ID, userModel.Email, h.mobileCallbackURL)
 
 	// Redirect to mobile app with token
 	redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", jwtToken)

@@ -75,7 +75,7 @@ func run() error {
 
 	// Initialize handlers
 	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL)
-	userHandler := httphandlers.NewUserHandler(userRepo)
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo)
 	// Use new service-based handler (refactored architecture)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
@@ -108,9 +108,8 @@ func run() error {
 	authMiddleware := middleware.Auth(jwt)
 
 	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(userHandler.HandleMe)))
-	// Use new service-based account handler (refactored architecture)
-	mux.Handle("/api/accounts", authMiddleware(http.HandlerFunc(accountHandler.HandleListAccounts)))
-	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleGetAccount)))
+	// Account routes - single handler for all /api/accounts/ paths
+	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(accountHandler.HandleAccounts)))
 	mux.Handle("/api/transactions", authMiddleware(http.HandlerFunc(transactionHandler.HandleListTransactions)))
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(transactionHandler.HandleGetTransaction)))
 

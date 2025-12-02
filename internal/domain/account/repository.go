@@ -14,6 +14,9 @@ type Repository interface {
 	// ListByUserID retrieves all accounts for a specific user
 	ListByUserID(ctx context.Context, userID int64) ([]*Account, error)
 
+	// ListByUserIDWithBank retrieves all accounts for a specific user with bank data (JOIN)
+	ListByUserIDWithBank(ctx context.Context, userID int64) ([]*AccountWithBank, error)
+
 	// Delete removes an account
 	Delete(ctx context.Context, id string) error
 
@@ -28,4 +31,7 @@ type Repository interface {
 
 	// UpdateBankID updates the bank_id for an account
 	UpdateBankID(ctx context.Context, accountID string, bankID int64) error
+
+	// GetBalanceSumBySubtype calculates the sum of absolute balances for accounts with specific subtypes
+	GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error)
 }

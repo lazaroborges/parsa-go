@@ -9,14 +9,24 @@ import (
 
 // MockRepository is a mock implementation of Repository interface
 type MockRepository struct {
-	CreateFunc       func(ctx context.Context, params CreateParams) (*Account, error)
-	GetByIDFunc      func(ctx context.Context, id string) (*Account, error)
-	ListByUserIDFunc func(ctx context.Context, userID int64) ([]*Account, error)
-	DeleteFunc       func(ctx context.Context, id string) error
-	UpsertFunc       func(ctx context.Context, params UpsertParams) (*Account, error)
-	ExistsFunc       func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc  func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
-	UpdateBankIDFunc func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc                 func(ctx context.Context, params CreateParams) (*Account, error)
+	GetByIDFunc                func(ctx context.Context, id string) (*Account, error)
+	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*Account, error)
+	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*AccountWithBank, error)
+	DeleteFunc                 func(ctx context.Context, id string) error
+	UpsertFunc                 func(ctx context.Context, params UpsertParams) (*Account, error)
+	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
+	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
+	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+}
+
+// GetBalanceSumBySubtype implements Repository.
+func (m *MockRepository) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+	if m.GetBalanceSumBySubtypeFunc != nil {
+		return m.GetBalanceSumBySubtypeFunc(ctx, userID, subtypes)
+	}
+	return 0, nil
 }
 
 func (m *MockRepository) Create(ctx context.Context, params CreateParams) (*Account, error) {
@@ -73,6 +83,13 @@ func (m *MockRepository) UpdateBankID(ctx context.Context, accountID string, ban
 		return m.UpdateBankIDFunc(ctx, accountID, bankID)
 	}
 	return nil
+}
+
+func (m *MockRepository) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*AccountWithBank, error) {
+	if m.ListByUserIDWithBankFunc != nil {
+		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
 }
 
 func TestCreateAccount(t *testing.T) {
@@ -160,6 +177,25 @@ func TestCreateAccount(t *testing.T) {
 				}
 			},
 			wantErr: true,
+		},
+		{
+			name: "Success with Balance Sum",
+			params: CreateParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "BANK",
+				Currency:    "USD",
+				Balance:     100.0,
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{
+					CreateFunc: func(ctx context.Context, params CreateParams) (*Account, error) {
+						return &Account{ID: params.ID, UserID: params.UserID, Name: params.Name, AccountType: params.AccountType, Currency: params.Currency, Balance: params.Balance, CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
+					},
+				}
+			},
+			wantErr: false,
 		},
 	}
 

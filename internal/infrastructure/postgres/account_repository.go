@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"parsa/internal/domain/account"
+
+	"github.com/lib/pq"
 )
 
 // AccountRepository implements the account.Repository interface for PostgreSQL
@@ -437,6 +439,111 @@ func (r *AccountRepository) UpdateBankID(ctx context.Context, accountID string, 
 	}
 
 	return nil
+}
+
+// ListByUserIDWithBank retrieves all accounts for a specific user with bank data (LEFT JOIN)
+func (r *AccountRepository) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
+	query := `
+		SELECT 
+			a.id, a.user_id, a.item_id, a.name, a.account_type, a.subtype, a.currency, a.balance, a.bank_id,
+			a.provider_updated_at, a.provider_created_at, a.created_at, a.updated_at,
+			a.initial_balance, a.is_open_finance_account, a.closed_at, a."order", a.description, a.removed, a.hidden_by_user,
+			b.name AS bank_name, b.ui_name AS bank_ui_name, b.connector AS bank_connector, b.primary_color AS bank_primary_color
+		FROM accounts a
+		LEFT JOIN banks b ON a.bank_id = b.id
+		WHERE a.user_id = $1
+		ORDER BY a."order" ASC, a.created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list accounts with bank: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []*account.AccountWithBank
+	for rows.Next() {
+		var acc account.AccountWithBank
+		var itemID, subtype, description sql.NullString
+		var bankID sql.NullInt64
+		var providerUpdatedAt, providerCreatedAt, closedAt sql.NullTime
+		var bankName, bankUIName, bankConnector, bankPrimaryColor sql.NullString
+
+		err := rows.Scan(
+			&acc.ID, &acc.UserID, &itemID, &acc.Name,
+			&acc.AccountType, &subtype, &acc.Currency, &acc.Balance, &bankID,
+			&providerUpdatedAt, &providerCreatedAt, &acc.CreatedAt, &acc.UpdatedAt,
+			&acc.InitialBalance, &acc.IsOpenFinanceAccount, &closedAt, &acc.UIOrder, &description, &acc.Removed, &acc.HiddenByUser,
+			&bankName, &bankUIName, &bankConnector, &bankPrimaryColor,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account with bank: %w", err)
+		}
+
+		if itemID.Valid {
+			acc.ItemID = itemID.String
+		}
+		if subtype.Valid {
+			acc.Subtype = subtype.String
+		}
+		if bankID.Valid {
+			acc.BankID = bankID.Int64
+		}
+		if providerUpdatedAt.Valid {
+			acc.ProviderUpdatedAt = providerUpdatedAt.Time
+		}
+		if providerCreatedAt.Valid {
+			acc.ProviderCreatedAt = providerCreatedAt.Time
+		}
+		if closedAt.Valid {
+			acc.ClosedAt = closedAt.Time
+		}
+		if description.Valid {
+			acc.Description = description.String
+		}
+		if bankName.Valid {
+			acc.BankName = bankName.String
+		}
+		if bankUIName.Valid {
+			acc.BankUIName = bankUIName.String
+		}
+		if bankConnector.Valid {
+			acc.BankConnector = bankConnector.String
+		}
+		if bankPrimaryColor.Valid {
+			acc.BankPrimaryColor = bankPrimaryColor.String
+		}
+
+		accounts = append(accounts, &acc)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating accounts with bank: %w", err)
+	}
+
+	return accounts, nil
+}
+
+// GetBalanceSumBySubtype calculates the sum of absolute balances for accounts with specific subtypes
+func (r *AccountRepository) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
+	if len(subtypes) == 0 {
+		return 0, nil
+	}
+
+	// Build the query using PostgreSQL's ANY operator with array parameter
+	query := `
+		SELECT COALESCE(SUM(ABS(balance)), 0)
+		FROM accounts
+		WHERE user_id = $1 AND subtype = ANY($2) AND removed = false AND hidden_by_user = false
+	`
+
+	var sum float64
+	err := r.db.QueryRowContext(ctx, query, userID, pq.Array(subtypes)).Scan(&sum)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate balance sum by subtype: %w", err)
+	}
+
+	return sum, nil
 }
 
 // Helper functions

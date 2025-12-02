@@ -5,16 +5,21 @@ import (
 	"log"
 	"net/http"
 
-	"parsa/internal/shared/middleware"
+	"parsa/internal/domain/account"
 	"parsa/internal/domain/user"
+	"parsa/internal/shared/middleware"
 )
 
 type UserHandler struct {
-	userRepo user.Repository
+	userRepo    user.Repository
+	accountRepo account.Repository
 }
 
-func NewUserHandler(userRepo user.Repository) *UserHandler {
-	return &UserHandler{userRepo: userRepo}
+func NewUserHandler(userRepo user.Repository, accountRepo account.Repository) *UserHandler {
+	return &UserHandler{
+		userRepo:    userRepo,
+		accountRepo: accountRepo,
+	}
 }
 
 // HandleMe handles both GET and PATCH requests for the current user
@@ -43,6 +48,31 @@ func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
+
+	// Calculate balanceAvailable: SUM of ABS balance of CHECKING_ACCOUNT
+	balanceAvailable, err := h.accountRepo.GetBalanceSumBySubtype(r.Context(), userID, []string{"CHECKING_ACCOUNT"})
+	if err != nil {
+		log.Printf("Error calculating checking account balance for user %d: %v", userID, err)
+		balanceAvailable = 0
+	}
+	user.BalanceAvailable = &balanceAvailable
+
+	// Calculate balanceTotal: SUM of ABS balance of CHECKING_ACCOUNT and SAVINGS_ACCOUNT
+	// minus the ABS balance sum of all CREDIT_CARD
+	checkingAndSavingsBalance, err := h.accountRepo.GetBalanceSumBySubtype(r.Context(), userID, []string{"CHECKING_ACCOUNT", "SAVINGS_ACCOUNT"})
+	if err != nil {
+		log.Printf("Error calculating checking and savings account balance for user %d: %v", userID, err)
+		checkingAndSavingsBalance = 0
+	}
+
+	creditCardBalance, err := h.accountRepo.GetBalanceSumBySubtype(r.Context(), userID, []string{"CREDIT_CARD"})
+	if err != nil {
+		log.Printf("Error calculating credit card balance for user %d: %v", userID, err)
+		creditCardBalance = 0
+	}
+
+	balanceTotal := checkingAndSavingsBalance - creditCardBalance
+	user.BalanceTotal = &balanceTotal
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
