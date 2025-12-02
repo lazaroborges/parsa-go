@@ -82,7 +82,8 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 	if providerUpdatedAt.Valid {
 		txn.ProviderUpdatedAt = providerUpdatedAt.Time
 	}
-	txn.Tags = parsePostgresArray(tags)
+	// Tags are null or empty, so just set to empty slice
+	txn.Tags = []string{}
 
 	if err == sql.ErrNoRows {
 		return nil, nil // Not found
@@ -180,7 +181,8 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 		if providerUpdatedAt.Valid {
 			txn.ProviderUpdatedAt = providerUpdatedAt.Time
 		}
-		txn.Tags = parsePostgresArray(tags)
+		// Tags are null or empty, so just set to empty slice
+		txn.Tags = []string{}
 
 		transactions = append(transactions, &txn)
 	}
@@ -190,23 +192,6 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 	}
 
 	return transactions, nil
-}
-
-// parsePostgresArray parses a PostgreSQL text array into a Go string slice
-func parsePostgresArray(data []byte) []string {
-	if data == nil || len(data) == 0 {
-		return []string{}
-	}
-	s := string(data)
-	if s == "{}" || s == "" {
-		return []string{}
-	}
-	// Remove braces and split
-	s = strings.Trim(s, "{}")
-	if s == "" {
-		return []string{}
-	}
-	return strings.Split(s, ",")
 }
 
 func (r *TransactionRepository) Update(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error) {
