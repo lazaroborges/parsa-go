@@ -9,14 +9,15 @@ import (
 
 // MockRepository is a mock implementation of Repository interface
 type MockRepository struct {
-	CreateFunc       func(ctx context.Context, params CreateParams) (*Account, error)
-	GetByIDFunc      func(ctx context.Context, id string) (*Account, error)
-	ListByUserIDFunc func(ctx context.Context, userID int64) ([]*Account, error)
-	DeleteFunc       func(ctx context.Context, id string) error
-	UpsertFunc       func(ctx context.Context, params UpsertParams) (*Account, error)
-	ExistsFunc       func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc  func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
-	UpdateBankIDFunc func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc               func(ctx context.Context, params CreateParams) (*Account, error)
+	GetByIDFunc              func(ctx context.Context, id string) (*Account, error)
+	ListByUserIDFunc         func(ctx context.Context, userID int64) ([]*Account, error)
+	ListByUserIDWithBankFunc func(ctx context.Context, userID int64) ([]*AccountWithBank, error)
+	DeleteFunc               func(ctx context.Context, id string) error
+	UpsertFunc               func(ctx context.Context, params UpsertParams) (*Account, error)
+	ExistsFunc               func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc          func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
+	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
 }
 
 func (m *MockRepository) Create(ctx context.Context, params CreateParams) (*Account, error) {
@@ -73,6 +74,13 @@ func (m *MockRepository) UpdateBankID(ctx context.Context, accountID string, ban
 		return m.UpdateBankIDFunc(ctx, accountID, bankID)
 	}
 	return nil
+}
+
+func (m *MockRepository) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*AccountWithBank, error) {
+	if m.ListByUserIDWithBankFunc != nil {
+		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
 }
 
 func TestCreateAccount(t *testing.T) {

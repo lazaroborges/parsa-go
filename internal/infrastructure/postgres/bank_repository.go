@@ -20,19 +20,20 @@ func NewBankRepository(db *DB) *BankRepository {
 func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, connector string) (*models.Bank, error) {
 	// Try to find existing bank by connector
 	query := `
-		SELECT id, name, ui_name, connector
+		SELECT id, name, ui_name, connector, primary_color
 		FROM banks
 		WHERE connector = $1
 	`
 
 	var bank models.Bank
-	var uiName sql.NullString
+	var uiName, primaryColor sql.NullString
 	err := r.db.QueryRowContext(ctx, query, connector).Scan(
-		&bank.ID, &bank.Name, &uiName, &bank.Connector,
+		&bank.ID, &bank.Name, &uiName, &bank.Connector, &primaryColor,
 	)
 
 	if err == nil {
 		bank.UIName = uiName.String
+		bank.PrimaryColor = primaryColor.String
 		return &bank, nil
 	}
 
@@ -44,11 +45,11 @@ func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, conn
 	insertQuery := `
 		INSERT INTO banks (name, connector)
 		VALUES ($1, $2)
-		RETURNING id, name, ui_name, connector
+		RETURNING id, name, ui_name, connector, primary_color
 	`
 
 	err = r.db.QueryRowContext(ctx, insertQuery, name, connector).Scan(
-		&bank.ID, &bank.Name, &uiName, &bank.Connector,
+		&bank.ID, &bank.Name, &uiName, &bank.Connector, &primaryColor,
 	)
 
 	if err != nil {
@@ -56,26 +57,28 @@ func (r *BankRepository) FindOrCreateByConnector(ctx context.Context, name, conn
 	}
 
 	bank.UIName = uiName.String
+	bank.PrimaryColor = primaryColor.String
 	return &bank, nil
 }
 
 // FindOrCreateByName finds a bank by name or creates it if it doesn't exist
 func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*models.Bank, error) {
 	query := `
-		SELECT id, name, ui_name, connector
+		SELECT id, name, ui_name, connector, primary_color
 		FROM banks
 		WHERE name = $1
 	`
 
 	var bank models.Bank
-	var uiName, connector sql.NullString
+	var uiName, connector, primaryColor sql.NullString
 	err := r.db.QueryRowContext(ctx, query, name).Scan(
-		&bank.ID, &bank.Name, &uiName, &connector,
+		&bank.ID, &bank.Name, &uiName, &connector, &primaryColor,
 	)
 
 	if err == nil {
 		bank.UIName = uiName.String
 		bank.Connector = connector.String
+		bank.PrimaryColor = primaryColor.String
 		return &bank, nil
 	}
 
@@ -87,11 +90,11 @@ func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*
 	insertQuery := `
 		INSERT INTO banks (name)
 		VALUES ($1)
-		RETURNING id, name, ui_name, connector
+		RETURNING id, name, ui_name, connector, primary_color
 	`
 
 	err = r.db.QueryRowContext(ctx, insertQuery, name).Scan(
-		&bank.ID, &bank.Name, &uiName, &connector,
+		&bank.ID, &bank.Name, &uiName, &connector, &primaryColor,
 	)
 
 	if err != nil {
@@ -100,21 +103,22 @@ func (r *BankRepository) FindOrCreateByName(ctx context.Context, name string) (*
 
 	bank.UIName = uiName.String
 	bank.Connector = connector.String
+	bank.PrimaryColor = primaryColor.String
 	return &bank, nil
 }
 
 // GetByID retrieves a bank by its ID
 func (r *BankRepository) GetByID(ctx context.Context, id int64) (*models.Bank, error) {
 	query := `
-		SELECT id, name, ui_name, connector
+		SELECT id, name, ui_name, connector, primary_color
 		FROM banks
 		WHERE id = $1
 	`
 
 	var bank models.Bank
-	var uiName, connector sql.NullString
+	var uiName, connector, primaryColor sql.NullString
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&bank.ID, &bank.Name, &uiName, &connector,
+		&bank.ID, &bank.Name, &uiName, &connector, &primaryColor,
 	)
 
 	if err == sql.ErrNoRows {
@@ -126,13 +130,14 @@ func (r *BankRepository) GetByID(ctx context.Context, id int64) (*models.Bank, e
 
 	bank.UIName = uiName.String
 	bank.Connector = connector.String
+	bank.PrimaryColor = primaryColor.String
 	return &bank, nil
 }
 
 // List retrieves all banks
 func (r *BankRepository) List(ctx context.Context) ([]*models.Bank, error) {
 	query := `
-		SELECT id, name, ui_name, connector
+		SELECT id, name, ui_name, connector, primary_color
 		FROM banks
 		ORDER BY name
 	`
@@ -146,13 +151,14 @@ func (r *BankRepository) List(ctx context.Context) ([]*models.Bank, error) {
 	var banks []*models.Bank
 	for rows.Next() {
 		var bank models.Bank
-		var uiName, connector sql.NullString
-		err := rows.Scan(&bank.ID, &bank.Name, &uiName, &connector)
+		var uiName, connector, primaryColor sql.NullString
+		err := rows.Scan(&bank.ID, &bank.Name, &uiName, &connector, &primaryColor)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan bank: %w", err)
 		}
 		bank.UIName = uiName.String
 		bank.Connector = connector.String
+		bank.PrimaryColor = primaryColor.String
 		banks = append(banks, &bank)
 	}
 

@@ -14,6 +14,9 @@ type Repository interface {
 	// ListByUserID retrieves all accounts for a specific user
 	ListByUserID(ctx context.Context, userID int64) ([]*Account, error)
 
+	// ListByUserIDWithBank retrieves all accounts for a specific user with bank data (JOIN)
+	ListByUserIDWithBank(ctx context.Context, userID int64) ([]*AccountWithBank, error)
+
 	// Delete removes an account
 	Delete(ctx context.Context, id string) error
 

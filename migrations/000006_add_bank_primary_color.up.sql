@@ -1,0 +1,2 @@
+ALTER TABLE banks ADD COLUMN primary_color VARCHAR(6) DEFAULT '1194F6';
+

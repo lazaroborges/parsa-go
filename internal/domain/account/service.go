@@ -59,6 +59,15 @@ func (s *Service) ListAccountsByUserID(ctx context.Context, userID int64) ([]*Ac
 	return s.repo.ListByUserID(ctx, userID)
 }
 
+// ListAccountsWithBankByUserID retrieves all accounts for a specific user with bank data
+func (s *Service) ListAccountsWithBankByUserID(ctx context.Context, userID int64) ([]*AccountWithBank, error) {
+	if userID <= 0 {
+		return nil, errors.New("valid user ID is required")
+	}
+
+	return s.repo.ListByUserIDWithBank(ctx, userID)
+}
+
 // DeleteAccount deletes an account after verifying ownership
 func (s *Service) DeleteAccount(ctx context.Context, accountID string, userID int64) error {
 	// Verify ownership before deletion

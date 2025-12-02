@@ -1,9 +1,7 @@
 package http
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -15,14 +13,15 @@ import (
 
 // MockAccountRepo implements account.Repository for testing
 type MockAccountRepo struct {
-	CreateFunc       func(ctx context.Context, params account.CreateParams) (*account.Account, error)
-	GetByIDFunc      func(ctx context.Context, id string) (*account.Account, error)
-	ListByUserIDFunc func(ctx context.Context, userID int64) ([]*account.Account, error)
-	DeleteFunc       func(ctx context.Context, id string) error
-	UpsertFunc       func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
-	ExistsFunc       func(ctx context.Context, id string) (bool, error)
-	FindByMatchFunc  func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
-	UpdateBankIDFunc func(ctx context.Context, accountID string, bankID int64) error
+	CreateFunc               func(ctx context.Context, params account.CreateParams) (*account.Account, error)
+	GetByIDFunc              func(ctx context.Context, id string) (*account.Account, error)
+	ListByUserIDFunc         func(ctx context.Context, userID int64) ([]*account.Account, error)
+	ListByUserIDWithBankFunc func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
+	DeleteFunc               func(ctx context.Context, id string) error
+	UpsertFunc               func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
+	ExistsFunc               func(ctx context.Context, id string) (bool, error)
+	FindByMatchFunc          func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
+	UpdateBankIDFunc         func(ctx context.Context, accountID string, bankID int64) error
 }
 
 func (m *MockAccountRepo) Create(ctx context.Context, params account.CreateParams) (*account.Account, error) {
@@ -81,61 +80,52 @@ func (m *MockAccountRepo) UpdateBankID(ctx context.Context, accountID string, ba
 	return nil
 }
 
-func TestHandleCreateAccount(t *testing.T) {
+func (m *MockAccountRepo) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
+	if m.ListByUserIDWithBankFunc != nil {
+		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+func TestHandleListAccounts(t *testing.T) {
 	tests := []struct {
 		name           string
-		body           map[string]interface{}
 		userID         int64
 		mockRepo       func() *MockAccountRepo
 		expectedStatus int
 	}{
 		{
-			name: "Success",
-			body: map[string]interface{}{
-				"id":          "acc-1",
-				"name":        "Test Account",
-				"accountType": "BANK",
-				"currency":    "USD",
-				"balance":     100.0,
-			},
+			name:   "Success",
 			userID: 1,
 			mockRepo: func() *MockAccountRepo {
 				return &MockAccountRepo{
-					CreateFunc: func(ctx context.Context, params account.CreateParams) (*account.Account, error) {
-						return &account.Account{ID: params.ID}, nil
+					ListByUserIDWithBankFunc: func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
+						return []*account.AccountWithBank{
+							{Account: account.Account{ID: "acc-1", UserID: 1, Name: "Test Account"}},
+						}, nil
 					},
 				}
 			},
-			expectedStatus: http.StatusCreated,
+			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "Invalid Input - Missing Name",
-			body: map[string]interface{}{
-				"id":          "acc-1",
-				"accountType": "BANK",
-			},
+			name:   "Empty List",
 			userID: 1,
 			mockRepo: func() *MockAccountRepo {
 				return &MockAccountRepo{
-					CreateFunc: func(ctx context.Context, params account.CreateParams) (*account.Account, error) {
-						return nil, account.ErrInvalidInput
+					ListByUserIDWithBankFunc: func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
+						return []*account.AccountWithBank{}, nil
 					},
 				}
 			},
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "Service Error",
-			body: map[string]interface{}{
-				"id":          "acc-1",
-				"name":        "Test Account",
-				"accountType": "BANK",
-				"currency":    "USD",
-			},
+			name:   "Service Error",
 			userID: 1,
 			mockRepo: func() *MockAccountRepo {
 				return &MockAccountRepo{
-					CreateFunc: func(ctx context.Context, params account.CreateParams) (*account.Account, error) {
+					ListByUserIDWithBankFunc: func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
 						return nil, errors.New("db error")
 					},
 				}
@@ -146,22 +136,16 @@ func TestHandleCreateAccount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
 			repo := tt.mockRepo()
 			service := account.NewService(repo)
 			handler := NewAccountHandler(service)
 
-			// Create Request
-			bodyBytes, _ := json.Marshal(tt.body)
-			req, _ := http.NewRequest(http.MethodPost, "/api/accounts", bytes.NewBuffer(bodyBytes))
-			
-			// Inject Context
+			req, _ := http.NewRequest(http.MethodGet, "/api/accounts/", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
 			req = req.WithContext(ctx)
 
-			// Record Response
 			rr := httptest.NewRecorder()
-			handler.HandleCreateAccount(rr, req)
+			handler.HandleAccounts(rr, req)
 
 			if rr.Code != tt.expectedStatus {
 				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.expectedStatus)
@@ -231,7 +215,7 @@ func TestHandleGetAccount(t *testing.T) {
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
-			handler.HandleGetAccount(rr, req)
+			handler.HandleAccounts(rr, req)
 
 			if rr.Code != tt.expectedStatus {
 				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.expectedStatus)

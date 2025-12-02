@@ -39,31 +39,49 @@ var (
 
 // Account represents a financial account domain entity
 type Account struct {
-	ID                string    `json:"id"`
-	UserID            int64     `json:"userId"`
-	ItemID            string    `json:"itemId"`
-	Name              string    `json:"name"`
-	AccountType       string    `json:"accountType"`
-	Subtype           string    `json:"subtype"`
-	Currency          string    `json:"currency"`
-	Balance           float64   `json:"balance"`
-	BankID            int64     `json:"bankId"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
-	ProviderUpdatedAt time.Time `json:"providerUpdatedAt"`
-	ProviderCreatedAt time.Time `json:"providerCreatedAt"`
+	ID                   string    `json:"id"`
+	UserID               int64     `json:"userId"`
+	ItemID               string    `json:"itemId"`
+	Name                 string    `json:"name"`
+	AccountType          string    `json:"accountType"`
+	Subtype              string    `json:"subtype"`
+	Currency             string    `json:"currency"`
+	Balance              float64   `json:"balance"`
+	BankID               int64     `json:"bankId"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+	ProviderUpdatedAt    time.Time `json:"providerUpdatedAt"`
+	ProviderCreatedAt    time.Time `json:"providerCreatedAt"`
+	InitialBalance       float64   `json:"initialBalance"`       // default to 0.00
+	IsOpenFinanceAccount bool      `json:"isOpenFinanceAccount"` // default to true
+	ClosedAt             time.Time `json:"closedAt"`             // default to NULL
+	UIOrder              int       `json:"order"`                // default to 90
+	Description          string    `json:"description"`          // default to NULL
+	Removed              bool      `json:"removed"`              // default to false
+	HiddenByUser         bool      `json:"hiddenByUser"`         // default to false
+}
+
+// AccountWithBank represents an account with its associated bank data (for API responses)
+type AccountWithBank struct {
+	Account
+	BankName         string `json:"bankName"`
+	BankUIName       string `json:"bankUIName"`
+	BankConnector    string `json:"bankConnector"`
+	BankPrimaryColor string `json:"bankPrimaryColor"`
 }
 
 // CreateParams contains parameters for creating a new account
 type CreateParams struct {
-	ID          string
-	UserID      int64
-	ItemID      string
-	Name        string
-	AccountType string
-	Currency    string
-	Balance     float64
-	BankID      int64
+	ID             string
+	UserID         int64
+	ItemID         string
+	Name           string
+	AccountType    string
+	Currency       string
+	Balance        float64
+	BankID         int64
+	InitialBalance float64
+	Description    string
 }
 
 // Validate validates the create parameters
@@ -101,17 +119,24 @@ type UpdateParams struct {
 
 // UpsertParams contains parameters for upserting an account
 type UpsertParams struct {
-	ID                string
-	UserID            int64
-	ItemID            string
-	Name              string
-	AccountType       string
-	Subtype           *string
-	Currency          string
-	Balance           float64
-	BankID            *int64
-	ProviderUpdatedAt *time.Time
-	ProviderCreatedAt *time.Time
+	ID                   string
+	UserID               int64
+	ItemID               string
+	Name                 string
+	AccountType          string
+	Subtype              *string
+	Currency             string
+	Balance              float64
+	BankID               *int64
+	ProviderUpdatedAt    *time.Time
+	ProviderCreatedAt    *time.Time
+	InitialBalance       *float64
+	IsOpenFinanceAccount *bool
+	ClosedAt             *time.Time
+	UIOrder              *int
+	Description          *string
+	Removed              *bool
+	HiddenByUser         *bool
 }
 
 // Validate validates the upsert parameters
