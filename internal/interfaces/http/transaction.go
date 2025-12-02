@@ -144,11 +144,11 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 	// Amount should be absolute value
 	amount := txn.Amount
 	if txn.Type == "DEBIT" {
-		amount = -amount
+		amount = -math.Abs(amount)
 	} else if txn.Type == "CREDIT" {
-		amount = amount
+		amount = math.Abs(amount)
 	} else {
-		amount = amount
+		amount = math.Abs(amount)
 	}
 
 	return TransactionAPIResponse{
