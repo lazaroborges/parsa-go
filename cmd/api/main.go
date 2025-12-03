@@ -65,6 +65,11 @@ func run() error {
 	// Initialize domain services (business logic layer)
 	accountService := account.NewService(accountRepo)
 
+	// Initialize Open Finance client and sync services (needed for provider key verification)
+	ofClient := ofclient.NewClient()
+	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
+	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
 	googleOAuth := auth.NewGoogleOAuthProvider(
@@ -92,7 +97,7 @@ func run() error {
 			log.Println("Apple OAuth provider initialized")
 		}
 	}
-	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo)
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService)
 	// Use new service-based handler (refactored architecture)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
@@ -147,10 +152,7 @@ func run() error {
 	// Initialize Open Finance sync (if enabled)
 	var sched *scheduler.Scheduler
 	if cfg.Scheduler.Enabled {
-		// Initialize Open Finance client and sync services
-		ofClient := ofclient.NewClient()
-		accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
-		transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+		// Use the already-initialized Open Finance client and sync services
 
 		// Create job provider function that creates composite sync jobs per user
 		jobProvider := func(ctx context.Context) ([]scheduler.Job, error) {
