@@ -46,6 +46,7 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleListAccounts)))
 	mux.Handle("/api/accounts/{id}", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleAccountByID)))
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleListTransactions)))
+	mux.Handle("/api/transactions/update", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleBatchTransactions)))
 	mux.Handle("/api/transactions/{id}", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleGetTransaction)))
 
 	// Apply global middleware

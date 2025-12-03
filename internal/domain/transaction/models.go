@@ -21,6 +21,7 @@ type Transaction struct {
 	IsOpenFinance     bool      `json:"isOpenFinance"`
 	Tags              []string  `json:"tags"`
 	Manipulated       bool      `json:"manipulated"`
+	Notes             *string   `json:"notes,omitempty"`
 }
 
 type CreateTransactionParams struct {
@@ -41,6 +42,8 @@ type UpdateTransactionParams struct {
 	TransactionDate *time.Time
 	Type            *string
 	Status          *string
+	Considered      *bool
+	Notes           *string
 }
 
 // UpsertTransactionParams is used for syncing transactions from the provider

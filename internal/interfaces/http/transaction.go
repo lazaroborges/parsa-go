@@ -1,8 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -68,6 +70,31 @@ type CreateTransactionRequest struct {
 	TransactionDate string  `json:"transactionDate"`
 	Type            string  `json:"type,omitempty"`   // DEBIT or CREDIT, defaults to DEBIT
 	Status          string  `json:"status,omitempty"` // PENDING or POSTED, defaults to POSTED
+}
+
+// BatchCreateRequest wraps multiple transaction create requests
+type BatchCreateRequest struct {
+	Transactions []CreateTransactionRequest `json:"transactions"`
+}
+
+// PatchTransactionItem represents a single transaction patch with ID
+type PatchTransactionItem struct {
+	ID          string  `json:"id"`
+	Description *string `json:"description,omitempty"`
+	Category    *string `json:"category,omitempty"`
+	Considered  *bool   `json:"considered,omitempty"`
+	Notes       *string `json:"notes,omitempty"`
+}
+
+// BatchPatchRequest wraps multiple transaction patch requests
+type BatchPatchRequest struct {
+	Transactions []PatchTransactionItem `json:"transactions"`
+}
+
+// BatchResponse is the response for batch operations
+type BatchResponse struct {
+	Count   int                      `json:"count"`
+	Results []TransactionAPIResponse `json:"results"`
 }
 
 // HandleListTransactions returns paginated transactions for a user (optionally filtered by account)
@@ -161,7 +188,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		ID:                  txn.ID,
 		Description:         txn.Description,
 		Amount:              amount,
-		Notes:               nil, // Not stored yet
+		Notes:               txn.Notes,
 		Currency:            "BRL",
 		Account:             txn.AccountID,
 		Category:            category,
@@ -368,4 +395,222 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleBatchTransactions routes batch requests to POST or PATCH handlers
+func (h *TransactionHandler) HandleBatchTransactions(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[BATCH] Request received: %s %s", r.Method, r.URL.Path)
+	switch r.Method {
+	case http.MethodPost:
+		h.handleBatchCreate(w, r)
+	case http.MethodPatch:
+		h.handleBatchPatch(w, r)
+	default:
+		log.Printf("[BATCH] Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleBatchCreate creates multiple transactions
+func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Read raw body for debugging
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("[BATCH CREATE] Error reading request body: %v", err)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Debug: Print raw request body
+	log.Printf("[BATCH CREATE] Raw request body:\n%s", string(bodyBytes))
+
+	var req BatchCreateRequest
+	if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
+		log.Printf("[BATCH CREATE] Error decoding JSON: %v\nRaw body was: %s", err, string(bodyBytes))
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Transactions) == 0 {
+		http.Error(w, "transactions array is required and cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	// Debug: Print incoming transactions (prettified)
+	debugJSON, _ := json.MarshalIndent(req, "", "  ")
+	log.Printf("[BATCH CREATE] Incoming transactions:\n%s", debugJSON)
+
+	// Collect unique account IDs and verify ownership
+	accountIDs := make(map[string]bool)
+	for _, txReq := range req.Transactions {
+		if txReq.AccountID == "" {
+			http.Error(w, "accountId is required for all transactions", http.StatusBadRequest)
+			return
+		}
+		accountIDs[txReq.AccountID] = true
+	}
+
+	// Verify ownership for all accounts
+	for accountID := range accountIDs {
+		acc, err := h.accountRepo.GetByID(r.Context(), accountID)
+		if err != nil || acc == nil {
+			http.Error(w, fmt.Sprintf("Account %s not found", accountID), http.StatusNotFound)
+			return
+		}
+		if acc.UserID != userID {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Create all transactions
+	results := make([]TransactionAPIResponse, 0, len(req.Transactions))
+	for _, txReq := range req.Transactions {
+		if txReq.Description == "" || txReq.TransactionDate == "" {
+			http.Error(w, "description and transactionDate are required for all transactions", http.StatusBadRequest)
+			return
+		}
+
+		transactionDate, err := time.Parse("2006-01-02", txReq.TransactionDate)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid transactionDate format for transaction: %s (use YYYY-MM-DD)", txReq.TransactionDate), http.StatusBadRequest)
+			return
+		}
+
+		txType := txReq.Type
+		if txType == "" {
+			txType = "DEBIT"
+		}
+		txStatus := txReq.Status
+		if txStatus == "" {
+			txStatus = "POSTED"
+		}
+
+		txID := uuid.New().String()
+
+		txn, err := h.transactionRepo.Create(r.Context(), transaction.CreateTransactionParams{
+			ID:              txID,
+			AccountID:       txReq.AccountID,
+			Amount:          txReq.Amount,
+			Description:     txReq.Description,
+			Category:        txReq.Category,
+			TransactionDate: transactionDate,
+			Type:            txType,
+			Status:          txStatus,
+		})
+
+		if err != nil {
+			log.Printf("Error creating transaction in batch: %v", err)
+			http.Error(w, "Failed to create transactions", http.StatusInternalServerError)
+			return
+		}
+
+		results = append(results, toTransactionAPIResponse(txn))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(BatchResponse{
+		Count:   len(results),
+		Results: results,
+	})
+}
+
+// handleBatchPatch updates multiple transactions
+func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Read raw body for debugging
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("[BATCH PATCH] Error reading request body: %v", err)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Debug: Print raw request body
+	log.Printf("[BATCH PATCH] Raw request body:\n%s", string(bodyBytes))
+
+	var req BatchPatchRequest
+	if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
+		log.Printf("[BATCH PATCH] Error decoding JSON: %v\nRaw body was: %s", err, string(bodyBytes))
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Debug: Print decoded transactions (prettified)
+	debugJSON, _ := json.MarshalIndent(req, "", "  ")
+	log.Printf("[BATCH PATCH] Decoded transactions:\n%s", debugJSON)
+
+	if len(req.Transactions) == 0 {
+		log.Printf("[BATCH PATCH] ERROR: transactions array is empty after decoding")
+		http.Error(w, "transactions array is required and cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	// Verify all transaction IDs are provided and check ownership
+	for _, patchReq := range req.Transactions {
+		if patchReq.ID == "" {
+			http.Error(w, "id is required for all transactions", http.StatusBadRequest)
+			return
+		}
+
+		txn, err := h.transactionRepo.GetByID(r.Context(), patchReq.ID)
+		if err != nil {
+			log.Printf("Error getting transaction %s for batch patch: %v", patchReq.ID, err)
+			http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
+			return
+		}
+		if txn == nil {
+			http.Error(w, fmt.Sprintf("Transaction %s not found", patchReq.ID), http.StatusNotFound)
+			return
+		}
+
+		acc, err := h.accountRepo.GetByID(r.Context(), txn.AccountID)
+		if err != nil || acc == nil {
+			http.Error(w, fmt.Sprintf("Account for transaction %s not found", patchReq.ID), http.StatusNotFound)
+			return
+		}
+		if acc.UserID != userID {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Update all transactions
+	results := make([]TransactionAPIResponse, 0, len(req.Transactions))
+	for _, patchReq := range req.Transactions {
+		txn, err := h.transactionRepo.Update(r.Context(), patchReq.ID, transaction.UpdateTransactionParams{
+			Description: patchReq.Description,
+			Category:    patchReq.Category,
+			Considered:  patchReq.Considered,
+			Notes:       patchReq.Notes,
+		})
+
+		if err != nil {
+			log.Printf("Error updating transaction %s in batch: %v", patchReq.ID, err)
+			http.Error(w, "Failed to update transactions", http.StatusInternalServerError)
+			return
+		}
+
+		results = append(results, toTransactionAPIResponse(txn))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(BatchResponse{
+		Count:   len(results),
+		Results: results,
+	})
 }
