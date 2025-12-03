@@ -204,6 +204,7 @@ func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertPar
 			item_id = EXCLUDED.item_id,
 			provider_updated_at = EXCLUDED.provider_updated_at,
 			updated_at = CURRENT_TIMESTAMP
+		WHERE accounts.user_id = EXCLUDED.user_id
 		RETURNING id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
 		          provider_updated_at, provider_created_at, created_at, updated_at
 	`
@@ -246,8 +247,17 @@ func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertPar
 		&acc.CreatedAt, &acc.UpdatedAt,
 	)
 
+	if err == sql.ErrNoRows {
+		// Account exists but belongs to a different user
+		return nil, fmt.Errorf("account %s already exists and belongs to a different user", params.ID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert account: %w", err)
+	}
+
+	// Verify ownership (double-check)
+	if acc.UserID != params.UserID {
+		return nil, fmt.Errorf("account %s belongs to a different user", params.ID)
 	}
 
 	if itemIDOut.Valid {
@@ -336,6 +346,7 @@ func (r *AccountRepository) UpsertBatch(ctx context.Context, params []account.Up
 			provider_updated_at = EXCLUDED.provider_updated_at,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE
+			accounts.user_id = EXCLUDED.user_id AND (
 			accounts.name IS DISTINCT FROM EXCLUDED.name OR
 			accounts.account_type IS DISTINCT FROM EXCLUDED.account_type OR
 			accounts.subtype IS DISTINCT FROM EXCLUDED.subtype OR
@@ -343,6 +354,7 @@ func (r *AccountRepository) UpsertBatch(ctx context.Context, params []account.Up
 			accounts.balance IS DISTINCT FROM EXCLUDED.balance OR
 			accounts.item_id IS DISTINCT FROM EXCLUDED.item_id OR
 			accounts.provider_updated_at IS DISTINCT FROM EXCLUDED.provider_updated_at
+		)
 	`, strings.Join(valueStrings, ", "))
 
 	result, err := r.db.ExecContext(ctx, query, valueArgs...)
