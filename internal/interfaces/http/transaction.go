@@ -277,7 +277,8 @@ func (h *TransactionHandler) HandleGetTransaction(w http.ResponseWriter, r *http
 		return
 	}
 
-	transactionID := strings.TrimPrefix(r.URL.Path, "/api/transactions/")
+	// Use PathValue instead of TrimPrefix
+	transactionID := r.PathValue("id")
 	if transactionID == "" {
 		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
 		return
