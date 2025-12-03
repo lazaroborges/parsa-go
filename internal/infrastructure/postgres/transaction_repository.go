@@ -57,28 +57,33 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
-		       provider_created_at, provider_updated_at, created_at, updated_at
+		       provider_created_at, provider_updated_at, created_at, updated_at,
+		       considered, is_open_finance, tags, manipulated
 		FROM transactions
 		WHERE id = $1
 	`
 
-	var transaction transaction.Transaction
+	var txn transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
+	var tags []byte // PostgreSQL array comes as bytes
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&transaction.ID, &transaction.AccountID, &transaction.Amount,
-		&transaction.Description, &transaction.Category, &transaction.TransactionDate,
-		&transaction.Type, &transaction.Status,
+		&txn.ID, &txn.AccountID, &txn.Amount,
+		&txn.Description, &txn.Category, &txn.TransactionDate,
+		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
-		&transaction.CreatedAt, &transaction.UpdatedAt,
+		&txn.CreatedAt, &txn.UpdatedAt,
+		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated,
 	)
 
 	if providerCreatedAt.Valid {
-		transaction.ProviderCreatedAt = providerCreatedAt.Time
+		txn.ProviderCreatedAt = providerCreatedAt.Time
 	}
 	if providerUpdatedAt.Valid {
-		transaction.ProviderUpdatedAt = providerUpdatedAt.Time
+		txn.ProviderUpdatedAt = providerUpdatedAt.Time
 	}
+	// Tags are null or empty, so just set to empty slice
+	txn.Tags = []string{}
 
 	if err == sql.ErrNoRows {
 		return nil, nil // Not found
@@ -87,13 +92,14 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
 
-	return &transaction, nil
+	return &txn, nil
 }
 
 func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
-		       provider_created_at, provider_updated_at, created_at, updated_at
+		       provider_created_at, provider_updated_at, created_at, updated_at,
+		       considered, is_open_finance, tags, manipulated
 		FROM transactions
 		WHERE account_id = $1
 		ORDER BY transaction_date DESC, created_at DESC
@@ -106,33 +112,82 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 	}
 	defer rows.Close()
 
+	return scanTransactions(rows)
+}
+
+// ListByUserID returns all transactions for a user across all accounts
+func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
+	query := `
+		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.transaction_date, t.type, t.status,
+		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
+		       t.considered, t.is_open_finance, t.tags, t.manipulated
+		FROM transactions t
+		JOIN accounts a ON t.account_id = a.id
+		WHERE a.user_id = $1
+		ORDER BY t.transaction_date DESC, t.created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list transactions by user: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}
+
+// CountByUserID returns the total count of transactions for a user
+func (r *TransactionRepository) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM transactions t
+		JOIN accounts a ON t.account_id = a.id
+		WHERE a.user_id = $1
+	`
+
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count transactions: %w", err)
+	}
+
+	return count, nil
+}
+
+// scanTransactions is a helper to scan transaction rows
+func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 	var transactions []*transaction.Transaction
 	for rows.Next() {
-		var transaction transaction.Transaction
+		var txn transaction.Transaction
 		var providerCreatedAt, providerUpdatedAt sql.NullTime
+		var tags []byte
 
 		err := rows.Scan(
-			&transaction.ID, &transaction.AccountID, &transaction.Amount,
-			&transaction.Description, &transaction.Category, &transaction.TransactionDate,
-			&transaction.Type, &transaction.Status,
+			&txn.ID, &txn.AccountID, &txn.Amount,
+			&txn.Description, &txn.Category, &txn.TransactionDate,
+			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
-			&transaction.CreatedAt, &transaction.UpdatedAt,
+			&txn.CreatedAt, &txn.UpdatedAt,
+			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan transaction: %w", err)
 		}
 
 		if providerCreatedAt.Valid {
-			transaction.ProviderCreatedAt = providerCreatedAt.Time
+			txn.ProviderCreatedAt = providerCreatedAt.Time
 		}
 		if providerUpdatedAt.Valid {
-			transaction.ProviderUpdatedAt = providerUpdatedAt.Time
+			txn.ProviderUpdatedAt = providerUpdatedAt.Time
 		}
+		// Tags are null or empty, so just set to empty slice
+		txn.Tags = []string{}
 
-		transactions = append(transactions, &transaction)
+		transactions = append(transactions, &txn)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating transactions: %w", err)
 	}
 

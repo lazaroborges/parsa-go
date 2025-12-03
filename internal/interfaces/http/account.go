@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"parsa/internal/domain/account"
@@ -52,28 +51,13 @@ type AccountResponse struct {
 	HasMFA        bool     `json:"hasMFA"` // false for now
 }
 
-// HandleAccounts is the single entry point for /api/accounts/ routes
-func (h *AccountHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
-	accountID := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
-	accountID = strings.TrimSuffix(accountID, "/")
-
-	switch r.Method {
-	case http.MethodGet:
-		h.handleGetAccounts(w, r, accountID)
-	case http.MethodDelete:
-		if accountID == "" {
-			http.Error(w, "Account ID is required", http.StatusBadRequest)
-			return
-		}
-		h.handleDeleteAccount(w, r, accountID)
-	default:
+// HandleListAccounts returns all accounts for the authenticated user
+func (h *AccountHandler) HandleListAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-}
 
-// handleGetAccounts returns accounts for the authenticated user
-// If accountID is empty, returns all accounts; otherwise returns the specific account
-func (h *AccountHandler) handleGetAccounts(w http.ResponseWriter, r *http.Request, accountID string) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -87,24 +71,6 @@ func (h *AccountHandler) handleGetAccounts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// If specific account requested, filter
-	if accountID != "" {
-		var found *account.AccountWithBank
-		for _, acc := range accounts {
-			if acc.ID == accountID {
-				found = acc
-				break
-			}
-		}
-		if found == nil {
-			http.Error(w, "Account not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(toAccountResponse(found))
-		return
-	}
-
 	// Return all accounts
 	response := make([]AccountResponse, 0, len(accounts))
 	for _, acc := range accounts {
@@ -115,14 +81,59 @@ func (h *AccountHandler) handleGetAccounts(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleDeleteAccount deletes an account
-func (h *AccountHandler) handleDeleteAccount(w http.ResponseWriter, r *http.Request, accountID string) {
+// HandleAccountByID handles operations on a specific account (GET and DELETE)
+func (h *AccountHandler) HandleAccountByID(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Use PathValue to extract the account ID
+	accountID := r.PathValue("id")
+	if accountID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.handleGetAccountByID(w, r, userID, accountID)
+	case http.MethodDelete:
+		h.handleDeleteAccount(w, r, userID, accountID)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetAccountByID returns a specific account
+func (h *AccountHandler) handleGetAccountByID(w http.ResponseWriter, r *http.Request, userID int64, accountID string) {
+	accounts, err := h.accountService.ListAccountsWithBankByUserID(r.Context(), userID)
+	if err != nil {
+		log.Printf("Error listing accounts for user %d: %v", userID, err)
+		http.Error(w, "Failed to list accounts", http.StatusInternalServerError)
+		return
+	}
+
+	// Find the specific account
+	var found *account.AccountWithBank
+	for _, acc := range accounts {
+		if acc.ID == accountID {
+			found = acc
+			break
+		}
+	}
+	if found == nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toAccountResponse(found))
+}
+
+// handleDeleteAccount deletes an account
+func (h *AccountHandler) handleDeleteAccount(w http.ResponseWriter, r *http.Request, userID int64, accountID string) {
 	err := h.accountService.DeleteAccount(r.Context(), accountID, userID)
 	if err != nil {
 		switch err {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	ofclient "parsa/internal/infrastructure/openfinance"
-	"parsa/internal/domain/user"
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/transaction"
+	"parsa/internal/domain/user"
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
 )
 
@@ -174,13 +174,16 @@ func (s *TransactionSyncService) processTransaction(
 		return fmt.Errorf("failed to check existing transaction: %w", err)
 	}
 
+	// Translate category from OpenFinance format to ParsaName
+	parsaCategory := transaction.TranslateCategory(apiTx.Category)
+
 	// Prepare upsert params
 	upsertParams := transaction.UpsertTransactionParams{
 		ID:              apiTx.ID,
 		AccountID:       account.ID,
 		Amount:          amount,
 		Description:     apiTx.Description,
-		Category:        apiTx.Category,
+		Category:        parsaCategory,
 		TransactionDate: *txDate,
 		Type:            apiTx.Type,
 		Status:          apiTx.Status,
