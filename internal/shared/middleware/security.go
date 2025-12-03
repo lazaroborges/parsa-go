@@ -125,3 +125,32 @@ func RequireHTTPS(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// IsHostAllowed validates a host against the allowed hosts list.
+// Used for preventing redirect poisoning attacks when redirecting HTTP to HTTPS.
+// Returns true if no allowed hosts are configured (backwards compatible).
+func IsHostAllowed(host string, allowedHosts []string) bool {
+	if len(allowedHosts) == 0 {
+		return true
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+	hostWithoutPort := host
+	if idx := strings.Index(host, ":"); idx != -1 {
+		hostWithoutPort = host[:idx]
+	}
+
+	for _, allowedHost := range allowedHosts {
+		allowedHost = strings.ToLower(strings.TrimSpace(allowedHost))
+		allowedHostWithoutPort := allowedHost
+		if idx := strings.Index(allowedHost, ":"); idx != -1 {
+			allowedHostWithoutPort = allowedHost[:idx]
+		}
+
+		if host == allowedHost || hostWithoutPort == allowedHostWithoutPort {
+			return true
+		}
+	}
+
+	return false
+}

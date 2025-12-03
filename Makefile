@@ -4,7 +4,7 @@ export
 
 # Run the application
 run:
-	go run cmd/api/main.go
+	go run ./cmd/api/
 
 dev:
 	air
@@ -14,7 +14,7 @@ test:
 
 # Build the application
 build:
-	go build -o bin/parsa cmd/api/main.go
+	go build -o bin/parsa ./cmd/api/
 
 # Run migrations up
 migrate-up:
