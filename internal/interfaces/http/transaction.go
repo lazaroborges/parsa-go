@@ -1,10 +1,8 @@
 package http
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -399,14 +397,12 @@ func (h *TransactionHandler) HandleDeleteTransaction(w http.ResponseWriter, r *h
 
 // HandleBatchTransactions routes batch requests to POST or PATCH handlers
 func (h *TransactionHandler) HandleBatchTransactions(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[BATCH] Request received: %s %s", r.Method, r.URL.Path)
 	switch r.Method {
 	case http.MethodPost:
 		h.handleBatchCreate(w, r)
 	case http.MethodPatch:
 		h.handleBatchPatch(w, r)
 	default:
-		log.Printf("[BATCH] Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -419,21 +415,9 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Read raw body for debugging
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("[BATCH CREATE] Error reading request body: %v", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	// Debug: Print raw request body
-	log.Printf("[BATCH CREATE] Raw request body:\n%s", string(bodyBytes))
-
 	var req BatchCreateRequest
-	if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
-		log.Printf("[BATCH CREATE] Error decoding JSON: %v\nRaw body was: %s", err, string(bodyBytes))
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding batch create request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -442,10 +426,6 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 		http.Error(w, "transactions array is required and cannot be empty", http.StatusBadRequest)
 		return
 	}
-
-	// Debug: Print incoming transactions (prettified)
-	debugJSON, _ := json.MarshalIndent(req, "", "  ")
-	log.Printf("[BATCH CREATE] Incoming transactions:\n%s", debugJSON)
 
 	// Collect unique account IDs and verify ownership
 	accountIDs := make(map[string]bool)
@@ -531,31 +511,14 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Read raw body for debugging
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("[BATCH PATCH] Error reading request body: %v", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	// Debug: Print raw request body
-	log.Printf("[BATCH PATCH] Raw request body:\n%s", string(bodyBytes))
-
 	var req BatchPatchRequest
-	if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
-		log.Printf("[BATCH PATCH] Error decoding JSON: %v\nRaw body was: %s", err, string(bodyBytes))
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding batch patch request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Debug: Print decoded transactions (prettified)
-	debugJSON, _ := json.MarshalIndent(req, "", "  ")
-	log.Printf("[BATCH PATCH] Decoded transactions:\n%s", debugJSON)
-
 	if len(req.Transactions) == 0 {
-		log.Printf("[BATCH PATCH] ERROR: transactions array is empty after decoding")
 		http.Error(w, "transactions array is required and cannot be empty", http.StatusBadRequest)
 		return
 	}
