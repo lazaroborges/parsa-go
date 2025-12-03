@@ -26,6 +26,7 @@ type AuthHandler struct {
 	mobileCallbackURL      string
 	webCallbackURL         string
 	appleMobileCallbackURL string
+	appleCallbackTemplate  *template.Template // Add this field
 }
 
 func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, mobileCallbackURL, webCallbackURL string) *AuthHandler {
@@ -558,22 +559,25 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 
 // renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback
 func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, error string) {
-	// Load HTML template
-	tmplPath := filepath.Join("web", "apple-oauth-callback.html")
-	tmpl, err := template.ParseFiles(tmplPath)
-	if err != nil {
-		log.Printf("Apple OAuth: Failed to load callback template: %v", err)
-		// Fallback: try to redirect directly if template loading fails
-		if error != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
-		} else if token != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
-		} else {
-			http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
+	// Parse template once and cache it (lazy initialization)
+	if h.appleCallbackTemplate == nil {
+		tmplPath := filepath.Join("web", "apple-oauth-callback.html")
+		tmpl, err := template.ParseFiles(tmplPath)
+		if err != nil {
+			log.Printf("Apple OAuth: Failed to load callback template: %v", err)
+			// Fallback redirect
+			if error != "" {
+				redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
+				http.Redirect(w, r, redirectURL, http.StatusFound)
+			} else if token != "" {
+				redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
+				http.Redirect(w, r, redirectURL, http.StatusFound)
+			} else {
+				http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
+			}
+			return
 		}
-		return
+		h.appleCallbackTemplate = tmpl
 	}
 
 	// Template data - encode as JSON for safe embedding in JavaScript
@@ -603,7 +607,7 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Req
 
 	// Set content type and render
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := h.appleCallbackTemplate.Execute(w, data); err != nil {
 		log.Printf("Apple OAuth: Failed to render callback template: %v", err)
 		// Fallback redirect
 		if error != "" {
