@@ -21,7 +21,6 @@ type Transaction struct {
 	IsOpenFinance     bool      `json:"isOpenFinance"`
 	Tags              []string  `json:"tags"`
 	Manipulated       bool      `json:"manipulated"`
-	OriginalCategory  string    `json:"originalCategory"`
 }
 
 type CreateTransactionParams struct {
