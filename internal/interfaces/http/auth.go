@@ -307,7 +307,6 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Apple OAuth: Request body: %s", string(body))
 
 	// Restore the body so ParseForm can read it
 	r.Body = io.NopCloser(bytes.NewReader(body))
@@ -328,13 +327,13 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	if oauthError != "" {
 		log.Printf("Apple OAuth error: %s", oauthError)
 		// Render HTML redirect page with error
-		h.renderAppleCallbackPage(w, "", oauthError)
+		h.renderAppleCallbackPage(w, r, "", oauthError)
 		return
 	}
 
 	if code == "" {
 		log.Printf("Apple OAuth: No code received")
-		h.renderAppleCallbackPage(w, "", "code_required")
+		h.renderAppleCallbackPage(w, r, "", "code_required")
 		return
 	}
 
@@ -344,7 +343,7 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	token, err := h.appleOAuthProvider.ExchangeCode(ctx, code, h.appleMobileCallbackURL)
 	if err != nil {
 		log.Printf("Apple OAuth: Failed to exchange code: %v", err)
-		h.renderAppleCallbackPage(w, "", "token_exchange_failed")
+		h.renderAppleCallbackPage(w, r, "", "token_exchange_failed")
 		return
 	}
 
@@ -352,7 +351,7 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	userInfo, err := h.appleOAuthProvider.GetUserInfo(ctx, token.AccessToken)
 	if err != nil {
 		log.Printf("Apple OAuth: Failed to get user info: %v", err)
-		h.renderAppleCallbackPage(w, "", "user_info_failed")
+		h.renderAppleCallbackPage(w, r, "", "user_info_failed")
 		return
 	}
 
@@ -387,7 +386,7 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 		})
 		if err != nil {
 			log.Printf("Apple OAuth: Failed to create user: %v", err)
-			h.renderAppleCallbackPage(w, "", "user_creation_failed")
+			h.renderAppleCallbackPage(w, r, "", "user_creation_failed")
 			return
 		}
 	}
@@ -396,12 +395,12 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	jwtToken, err := h.jwt.Generate(userModel.ID, userModel.Email)
 	if err != nil {
 		log.Printf("Apple OAuth: Error generating JWT for user %d: %v", userModel.ID, err)
-		h.renderAppleCallbackPage(w, "", "jwt_generation_failed")
+		h.renderAppleCallbackPage(w, r, "", "jwt_generation_failed")
 		return
 	}
 
 	// Render HTML redirect page with token
-	h.renderAppleCallbackPage(w, jwtToken, "")
+	h.renderAppleCallbackPage(w, r, jwtToken, "")
 }
 
 type RegisterRequest struct {
@@ -558,7 +557,7 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback
-func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, token, error string) {
+func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, error string) {
 	// Load HTML template
 	tmplPath := filepath.Join("web", "apple-oauth-callback.html")
 	tmpl, err := template.ParseFiles(tmplPath)
@@ -567,10 +566,10 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, token, erro
 		// Fallback: try to redirect directly if template loading fails
 		if error != "" {
 			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
-			http.Redirect(w, nil, redirectURL, http.StatusFound)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
 		} else if token != "" {
 			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-			http.Redirect(w, nil, redirectURL, http.StatusFound)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
 		} else {
 			http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
 		}
@@ -602,8 +601,6 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, token, erro
 		ErrorJSON: errorJSON,
 	}
 
-	log.Printf("Apple OAuth: Rendering callback template with data: %+v", data)
-
 	// Set content type and render
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.Execute(w, data); err != nil {
@@ -611,10 +608,10 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, token, erro
 		// Fallback redirect
 		if error != "" {
 			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
-			http.Redirect(w, nil, redirectURL, http.StatusFound)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
 		} else if token != "" {
 			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-			http.Redirect(w, nil, redirectURL, http.StatusFound)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
 		}
 	}
 }
