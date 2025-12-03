@@ -151,6 +151,12 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		amount = math.Abs(amount)
 	}
 
+	// Handle nil Category pointer safely
+	category := ""
+	if txn.Category != nil {
+		category = *txn.Category
+	}
+
 	return TransactionAPIResponse{
 		ID:                  txn.ID,
 		Description:         txn.Description,
@@ -158,7 +164,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Notes:               nil, // Not stored yet
 		Currency:            "BRL",
 		Account:             txn.AccountID,
-		Category:            *txn.Category,
+		Category:            category,
 		Type:                strings.ToLower(txn.Type),
 		TransactionDate:     txn.TransactionDate.Format(time.RFC3339),
 		Status:              strings.ToLower(txn.Status),
