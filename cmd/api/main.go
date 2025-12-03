@@ -75,6 +75,23 @@ func run() error {
 
 	// Initialize handlers
 	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL)
+
+	// Initialize Apple OAuth if configured
+	if cfg.OAuth.Apple.PrivateKeyPath != "" {
+		appleOAuth, err := auth.NewAppleOAuthProvider(
+			cfg.OAuth.Apple.TeamID,
+			cfg.OAuth.Apple.KeyID,
+			cfg.OAuth.Apple.ClientID,
+			cfg.OAuth.Apple.PrivateKeyPath,
+			cfg.OAuth.Apple.MobileCallbackURL,
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Apple OAuth: %v", err)
+		} else {
+			authHandler.SetAppleOAuthProvider(appleOAuth, cfg.OAuth.Apple.MobileCallbackURL)
+			log.Println("Apple OAuth provider initialized")
+		}
+	}
 	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo)
 	// Use new service-based handler (refactored architecture)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
@@ -98,9 +115,13 @@ func run() error {
 	mux.HandleFunc("/api/auth/oauth/url", authHandler.HandleAuthURL)
 	mux.HandleFunc("/api/auth/oauth/callback", authHandler.HandleCallback)
 
-	// Mobile OAuth
+	// Mobile OAuth (Google)
 	mux.HandleFunc("/api/auth/oauth/mobile/start", authHandler.HandleMobileAuthStart)
 	mux.HandleFunc("/api/auth/oauth/mobile/callback", authHandler.HandleMobileAuthCallback)
+
+	// Apple OAuth (Mobile)
+	mux.HandleFunc("/api/auth/oauth/apple/mobile/start", authHandler.HandleAppleMobileAuthStart)
+	mux.HandleFunc("/api/auth/oauth/apple/mobile/callback", authHandler.HandleAppleMobileAuthCallback)
 
 	mux.HandleFunc("/health", handleHealth)
 
