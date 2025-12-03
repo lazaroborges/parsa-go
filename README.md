@@ -1,262 +1,238 @@
-# Parsa - Personal Finance Management API
+# Parsa
 
-A production-ready RESTful API for personal finance management built with Go and PostgreSQL. To go with Parsa-Go in Flutter.
+A personal finance management API built with Go for Brazil's Open Finance Data Exchange Ecosystem. 
+
+## Overview
+
+Parsa is a RESTful API for managing personal finances — accounts, transactions, and bank synchronization via OpenFinance. The project prioritizes:
+
+- **Layered Architecture** — Hexagonal design with strict dependency inversion
+- **Minimal Dependencies** — Standard library for HTTP, JSON, and database access
+- **No ORM** — Raw SQL for full control over queries
+- **Production Patterns** — Context propagation, graceful shutdown, background job scheduling
 
 ## Features
 
-- **Authentication**: OAuth 2.0 (Google) with JWT token-based sessions
-- **User Management**: Profile management with OAuth integration
-- **Accounts**: Manage multiple financial accounts (checking, savings, credit cards, etc.)
-- **Transactions**: Track income and expenses with categorization
-- **RESTful API**: Clean API design following REST principles
-- **Standard Library**: Built with Go standard library (minimal dependencies)
-- **Clean Architecture**: Separation of concerns with repository pattern
+- User authentication (JWT + OAuth 2.0 with Google)
+- Multi-account support (checking, savings, credit cards, investments)
+- Transaction tracking with categorization
+- OpenFinance integration for automatic bank sync
+- Background job scheduler with worker pool
+- AES-256 encryption for sensitive data
+- Argon2id password hashing
 
 ## Architecture
 
 ```
-parsa-go/
-├── cmd/api/              # Application entrypoint
+┌─────────────────────────────────────────────────────────────┐
+│                     INTERFACES LAYER                        │
+│  HTTP handlers, Scheduler                                   │
+│  internal/interfaces/                                       │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                      DOMAIN LAYER                           │
+│  Services, Models, Repository interfaces                    │
+│  internal/domain/                                           │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                  INFRASTRUCTURE LAYER                       │
+│  PostgreSQL repositories, OpenFinance client                │
+│  internal/infrastructure/                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Dependencies point inward. The domain layer has no knowledge of HTTP or databases.
+
+## Project Structure
+
+```
+parsa/
+├── cmd/api/main.go              # Entry point
 ├── internal/
-│   ├── auth/            # OAuth & JWT logic
-│   ├── config/          # Configuration management
-│   ├── database/        # Database connection & repositories
-│   ├── handlers/        # HTTP handlers
-│   ├── middleware/      # HTTP middleware (auth, CORS, logging)
-│   └── models/          # Domain models
-└── migrations/          # Database migrations
+│   ├── domain/                  # Business logic
+│   │   ├── account/
+│   │   ├── transaction/
+│   │   ├── user/
+│   │   └── openfinance/
+│   ├── infrastructure/          # External adapters
+│   │   ├── postgres/
+│   │   ├── openfinance/
+│   │   └── crypto/
+│   ├── interfaces/              # Entry points
+│   │   ├── http/
+│   │   └── scheduler/
+│   └── shared/                  # Cross-cutting concerns
+│       ├── auth/
+│       ├── config/
+│       └── middleware/
+├── migrations/
+└── go.mod
 ```
 
 ## Tech Stack
 
-- **Language**: Go (standard library)
-- **Database**: PostgreSQL
-- **Authentication**: OAuth 2.0 + JWT
-- **Migration**: golang-migrate
+| Component | Choice |
+|-----------|--------|
+| Language | Go (standard library) |
+| Database | PostgreSQL 17+ |
+| Driver | lib/pq |
+| Encryption | golang.org/x/crypto |
+| Migrations | golang-migrate |
 
-## Setup
+Two external dependencies beyond the standard library.
+
+## Getting Started
 
 ### Prerequisites
 
 - Go 1.21+
 - PostgreSQL 14+
-- Google OAuth credentials
+- Google OAuth credentials 
+- OpenFinance API credentials 
 
-### 1. Clone and Install Dependencies
+### Setup
+
+1. Clone and install dependencies:
 
 ```bash
+git clone https://github.com/lazaroborges/parsa-go.git
 cd parsa-go
 go mod download
 ```
 
-### 2. Database Setup
-
-Create a PostgreSQL database:
+2. Create database:
 
 ```sql
 CREATE DATABASE parsa;
+CREATE USER parsa_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE parsa TO parsa_user;
 ```
 
-### 3. Environment Configuration
-
-Create a `.env` file (see `.env.example`):
+3. Configure environment (copy `.env.example` to `.env`):
 
 ```bash
-# Server
 PORT=8080
-HOST=0.0.0.0
-
-# Database
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=yourpassword
+DB_USER=parsa_user
+DB_PASSWORD=your_password
 DB_NAME=parsa
-DB_SSLMODE=disable
 
-# JWT
-JWT_SECRET=your-super-secret-jwt-key-change-this
-
-# Google OAuth
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URL=http://localhost:8080/auth/google/callback
+JWT_SECRET=your-256-bit-secret
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-### 4. Run Migrations
-
-Install golang-migrate:
+4. Run migrations:
 
 ```bash
-# macOS
-brew install golang-migrate
-
-# Linux
-curl -L https://github.com/golang-migrate/migrate/releases/download/v4.16.2/migrate.linux-amd64.tar.gz | tar xvz
-sudo mv migrate /usr/local/bin/
+migrate -path migrations -database "postgresql://parsa_user:your_password@localhost:5432/parsa?sslmode=disable" up
 ```
 
-Run migrations:
-
-```bash
-migrate -path migrations -database "postgres://$DB_USER:$DB_PASSWORD$@localhost:5432/parsa?sslmode=disable" up
-```
-
-### 5. Run the Server
+5. Start the server:
 
 ```bash
 go run cmd/api/main.go
 ```
 
-The server will start on `http://localhost:8080`
-
 ## API Endpoints
 
 ### Authentication
 
-- `GET /auth/google/url` - Get Google OAuth authorization URL
-- `POST /auth/google/callback` - Handle OAuth callback and issue JWT
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register with email/password |
+| POST | `/api/auth/login` | Login |
+| GET | `/api/auth/oauth/url` | Get OAuth URL |
+| GET | `/api/auth/oauth/callback` | OAuth callback |
 
-### Users
+### Protected Routes
 
-- `GET /users/me` - Get current user profile (protected)
+**Accounts**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/accounts` | List accounts |
+| GET | `/api/accounts/{id}` | Get account |
+| POST | `/api/accounts` | Create account |
+| DELETE | `/api/accounts/{id}` | Delete account |
 
-### Accounts
+**Transactions**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/transactions` | List transactions |
+| GET | `/api/transactions/{id}` | Get transaction |
+| POST | `/api/transactions` | Create transaction |
+| DELETE | `/api/transactions/{id}` | Delete transaction |
 
-- `GET /accounts` - List all accounts (protected)
-- `POST /accounts` - Create new account (protected)
-- `GET /accounts/:id` - Get specific account (protected)
-- `DELETE /accounts/:id` - Delete account (protected)
-
-### Transactions
-
-- `GET /transactions?account_id=xxx` - List transactions for account (protected)
-- `POST /transactions` - Create new transaction (protected)
-- `GET /transactions/:id` - Get specific transaction (protected)
-- `DELETE /transactions/:id` - Delete transaction (protected)
-
-### Health
-
-- `GET /health` - Health check endpoint
-
-## Authentication Flow
-
-1. Client calls `GET /auth/google/url` to get authorization URL
-2. User completes OAuth flow in browser
-3. Client receives authorization code
-4. Client calls `POST /auth/google/callback` with code
-5. Server validates code, creates/finds user, returns JWT
-6. Client includes JWT in `Authorization: Bearer <token>` header for protected routes
-
-## Example Requests
-
-### Login
+### Example
 
 ```bash
-# Get auth URL
-curl http://localhost:8080/auth/google/url
-
-# After OAuth flow, exchange code for JWT
-curl -X POST http://localhost:8080/auth/google/callback \
+# Register
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"code":"your-oauth-code","state":"state-from-url"}'
-```
+  -d '{"email": "user@example.com", "password": "password", "name": "User"}'
 
-### Create Account
-
-```bash
-curl -X POST http://localhost:8080/accounts \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+# Create account
+curl -X POST http://localhost:8080/api/accounts \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Chase Checking",
-    "account_type": "checking",
-    "currency": "USD",
-    "balance": 1000.00
-  }'
-```
-
-### Create Transaction
-
-```bash
-curl -X POST http://localhost:8080/transactions \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "account_id": "account-uuid",
-    "amount": -50.00,
-    "description": "Grocery shopping",
-    "category": "Food",
-    "transaction_date": "2025-01-15"
-  }'
+  -d '{"name": "Checking", "account_type": "checking", "currency": "BRL"}'
 ```
 
 ## Development
 
-### Building
-
 ```bash
+# Build
 go build -o bin/parsa cmd/api/main.go
-```
 
-### Testing
-
-```bash
+# Test
 go test ./...
+
+# Format
+go fmt ./...
+
+# Hot reload (requires Air)
+air
 ```
 
-## Production Deployment
+## Deployment
 
-### Build for Production
+Build for production:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o parsa cmd/api/main.go
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o parsa-api cmd/api/main.go
 ```
 
-### Systemd Service
+See the `/deployment` directory for systemd and nginx configuration examples.
 
-Create `/etc/systemd/system/parsa.service`:
+## Background Jobs
 
-```ini
-[Unit]
-Description=Parsa Finance API
-After=network.target postgresql.service
+The scheduler runs OpenFinance sync jobs at configured intervals:
 
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/parsa
-EnvironmentFile=/opt/parsa/.env
-ExecStart=/opt/parsa/parsa
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+```bash
+SYNC_SCHEDULE_TIMES=02:00,14:00
 ```
 
-### Nginx Reverse Proxy
+Jobs execute concurrently via a worker pool with graceful shutdown support.
 
-```nginx
-server {
-    listen 80;
-    server_name api.yourdomain.com;
+## Security
 
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+- JWT authentication (HS256)
+- Argon2id password hashing
+- AES-256-GCM for sensitive data encryption
+- OAuth 2.0 with CSRF state validation
+- CORS and security headers middleware
+
+## Roadmap
+
+- [ ] Improve Test coverage
+- [ ] Additional OAuth provider (Apple)
+- [ ] Spending analytics
+- [ ] OpenAPI documentation
+- [ ] Integration with Parsa's Proprietary Analytics Engine 
 
 ## License
 
 MIT
-
-## TODO 
-- **OAuth Duplication**: Rebase every new user from different OAuth Providers to reference the same email 
-- **Authentication**: OAuth 2.0 (Google) with JWT token-based sessions
-- **Hash**: Hash account balances and transaction amounts 
-
