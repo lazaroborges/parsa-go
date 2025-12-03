@@ -35,13 +35,22 @@ type DatabaseConfig struct {
 
 type OAuthConfig struct {
 	Google GoogleOAuthConfig
+	Apple  AppleOAuthConfig
 }
 
 type GoogleOAuthConfig struct {
-	ClientID            string
-	ClientSecret        string
-	WebCallbackURL      string
-	MobileCallbackURL   string
+	ClientID          string
+	ClientSecret      string
+	WebCallbackURL    string
+	MobileCallbackURL string
+}
+
+type AppleOAuthConfig struct {
+	TeamID            string
+	KeyID             string
+	ClientID          string
+	PrivateKeyPath    string
+	MobileCallbackURL string
 }
 
 type JWTConfig struct {
@@ -130,6 +139,13 @@ func Load() (*Config, error) {
 				ClientSecret:      getEnv("GOOGLE_CLIENT_SECRET", ""),
 				WebCallbackURL:    getEnv("GOOGLE_WEB_CALLBACK_URL", ""),
 				MobileCallbackURL: getEnv("GOOGLE_MOBILE_CALLBACK_URL", ""),
+			},
+			Apple: AppleOAuthConfig{
+				TeamID:            getEnv("APPLE_TEAM_ID", ""),
+				KeyID:             getEnv("APPLE_KEY_ID", ""),
+				ClientID:          getEnv("APPLE_CLIENT_ID", ""),
+				PrivateKeyPath:    getEnv("APPLE_PRIVATE_KEY_PATH", ""),
+				MobileCallbackURL: getEnv("APPLE_MOBILE_CALLBACK_URL", ""),
 			},
 		},
 		JWT: JWTConfig{

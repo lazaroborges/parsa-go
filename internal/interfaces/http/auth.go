@@ -1,12 +1,17 @@
 package http
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"path/filepath"
+	"strings"
 
 	"parsa/internal/domain/user"
 	"parsa/internal/infrastructure/postgres"
@@ -14,11 +19,13 @@ import (
 )
 
 type AuthHandler struct {
-	userRepo          *postgres.UserRepository
-	oauthProvider     auth.OAuthProvider
-	jwt               *auth.JWT
-	mobileCallbackURL string
-	webCallbackURL    string
+	userRepo               *postgres.UserRepository
+	oauthProvider          auth.OAuthProvider
+	appleOAuthProvider     auth.OAuthProvider
+	jwt                    *auth.JWT
+	mobileCallbackURL      string
+	webCallbackURL         string
+	appleMobileCallbackURL string
 }
 
 func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, mobileCallbackURL, webCallbackURL string) *AuthHandler {
@@ -29,6 +36,12 @@ func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthP
 		mobileCallbackURL: mobileCallbackURL,
 		webCallbackURL:    webCallbackURL,
 	}
+}
+
+// SetAppleOAuthProvider sets the Apple OAuth provider (optional, called after construction)
+func (h *AuthHandler) SetAppleOAuthProvider(provider auth.OAuthProvider, mobileCallbackURL string) {
+	h.appleOAuthProvider = provider
+	h.appleMobileCallbackURL = mobileCallbackURL
 }
 
 type AuthURLResponse struct {
@@ -249,6 +262,148 @@ func (h *AuthHandler) HandleMobileAuthCallback(w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+// HandleAppleMobileAuthStart generates Apple OAuth URL for mobile app
+func (h *AuthHandler) HandleAppleMobileAuthStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.appleOAuthProvider == nil {
+		http.Error(w, "Apple OAuth not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	state, err := generateState()
+	if err != nil {
+		log.Printf("Error generating OAuth state: %v", err)
+		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
+		return
+	}
+
+	authURL := h.appleOAuthProvider.GetAuthURL(state, h.appleMobileCallbackURL)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AuthURLResponse{URL: authURL})
+}
+
+// HandleAppleMobileAuthCallback processes Apple OAuth callback for mobile
+// Apple uses form_post response mode, so this handles POST requests
+func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.appleOAuthProvider == nil {
+		http.Error(w, "Apple OAuth not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Read body for logging, then restore it for ParseForm
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Apple OAuth: Failed to read request body: %v", err)
+		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Apple OAuth: Request body: %s", string(body))
+
+	// Restore the body so ParseForm can read it
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	// Parse form data (Apple sends as application/x-www-form-urlencoded)
+	if err := r.ParseForm(); err != nil {
+		log.Printf("Apple OAuth: Failed to parse form: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_form"})
+		return
+	}
+
+	code := r.FormValue("code")
+	oauthError := r.FormValue("error")
+	userJSON := r.FormValue("user") // Only sent on first authorization
+
+	if oauthError != "" {
+		log.Printf("Apple OAuth error: %s", oauthError)
+		// Render HTML redirect page with error
+		h.renderAppleCallbackPage(w, "", oauthError)
+		return
+	}
+
+	if code == "" {
+		log.Printf("Apple OAuth: No code received")
+		h.renderAppleCallbackPage(w, "", "code_required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Exchange code for token
+	token, err := h.appleOAuthProvider.ExchangeCode(ctx, code, h.appleMobileCallbackURL)
+	if err != nil {
+		log.Printf("Apple OAuth: Failed to exchange code: %v", err)
+		h.renderAppleCallbackPage(w, "", "token_exchange_failed")
+		return
+	}
+
+	// Get user info from id_token (stored in AccessToken field)
+	userInfo, err := h.appleOAuthProvider.GetUserInfo(ctx, token.AccessToken)
+	if err != nil {
+		log.Printf("Apple OAuth: Failed to get user info: %v", err)
+		h.renderAppleCallbackPage(w, "", "user_info_failed")
+		return
+	}
+
+	// Parse user object if provided (only on first authorization)
+	var appleUser auth.AppleUserInfo
+	if userJSON != "" {
+		if err := json.Unmarshal([]byte(userJSON), &appleUser); err != nil {
+			log.Printf("Apple OAuth: Failed to parse user JSON: %v", err)
+			// Non-fatal - continue without name
+		} else {
+			userInfo.FirstName = appleUser.Name.FirstName
+			userInfo.LastName = appleUser.Name.LastName
+			if userInfo.FirstName != "" || userInfo.LastName != "" {
+				userInfo.Name = strings.TrimSpace(appleUser.Name.FirstName + " " + appleUser.Name.LastName)
+			}
+		}
+	}
+
+	// Find or create user
+	userModel, err := h.userRepo.GetByOAuth(ctx, "apple", userInfo.ID)
+	if err != nil {
+		// User doesn't exist, create new user
+		provider := "apple"
+		userModel, err = h.userRepo.Create(ctx, user.CreateUserParams{
+			Email:         userInfo.Email,
+			Name:          userInfo.Name,
+			OAuthProvider: &provider,
+			OAuthID:       &userInfo.ID,
+			FirstName:     userInfo.FirstName,
+			LastName:      userInfo.LastName,
+			// Apple doesn't provide avatar
+		})
+		if err != nil {
+			log.Printf("Apple OAuth: Failed to create user: %v", err)
+			h.renderAppleCallbackPage(w, "", "user_creation_failed")
+			return
+		}
+	}
+
+	// Generate JWT
+	jwtToken, err := h.jwt.Generate(userModel.ID, userModel.Email)
+	if err != nil {
+		log.Printf("Apple OAuth: Error generating JWT for user %d: %v", userModel.ID, err)
+		h.renderAppleCallbackPage(w, "", "jwt_generation_failed")
+		return
+	}
+
+	// Render HTML redirect page with token
+	h.renderAppleCallbackPage(w, jwtToken, "")
+}
+
 type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -400,6 +555,68 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback
+func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, token, error string) {
+	// Load HTML template
+	tmplPath := filepath.Join("web", "apple-oauth-callback.html")
+	tmpl, err := template.ParseFiles(tmplPath)
+	if err != nil {
+		log.Printf("Apple OAuth: Failed to load callback template: %v", err)
+		// Fallback: try to redirect directly if template loading fails
+		if error != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
+			http.Redirect(w, nil, redirectURL, http.StatusFound)
+		} else if token != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
+			http.Redirect(w, nil, redirectURL, http.StatusFound)
+		} else {
+			http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Template data - encode as JSON for safe embedding in JavaScript
+	type templateData struct {
+		TokenJSON template.JS
+		ErrorJSON template.JS
+	}
+
+	var tokenJSON, errorJSON template.JS
+	if token != "" {
+		tokenBytes, _ := json.Marshal(token)
+		tokenJSON = template.JS(tokenBytes)
+	} else {
+		tokenJSON = template.JS("null")
+	}
+	if error != "" {
+		errorBytes, _ := json.Marshal(error)
+		errorJSON = template.JS(errorBytes)
+	} else {
+		errorJSON = template.JS("null")
+	}
+
+	data := templateData{
+		TokenJSON: tokenJSON,
+		ErrorJSON: errorJSON,
+	}
+
+	log.Printf("Apple OAuth: Rendering callback template with data: %+v", data)
+
+	// Set content type and render
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Apple OAuth: Failed to render callback template: %v", err)
+		// Fallback redirect
+		if error != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
+			http.Redirect(w, nil, redirectURL, http.StatusFound)
+		} else if token != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
+			http.Redirect(w, nil, redirectURL, http.StatusFound)
+		}
+	}
 }
 
 // setAuthCookie sets the JWT as an HttpOnly cookie

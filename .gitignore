@@ -11,6 +11,7 @@ accounts.json
 openfinanceproviderapi.json
 todos.txt
 scripts/
+*.p8
 
 # Environment files
 .env

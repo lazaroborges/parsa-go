@@ -9,21 +9,34 @@ import (
 func CORS(allowedHosts []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
+			// Skip CORS validation for OAuth callback endpoints
+			// These are server-to-server endpoints called by OAuth providers (Apple, Google)
+			// and shouldn't be subject to browser CORS restrictions
+			path := r.URL.Path
+			isOAuthCallback := strings.HasSuffix(path, "/oauth/callback") ||
+				strings.HasSuffix(path, "/oauth/mobile/callback") ||
+				strings.HasSuffix(path, "/oauth/apple/mobile/callback")
 
-			// If no allowed hosts configured, allow all origins (backwards compatible)
-			if len(allowedHosts) == 0 {
+			if isOAuthCallback {
+				// For OAuth callbacks, allow all origins (server-to-server)
 				w.Header().Set("Access-Control-Allow-Origin", "*")
-			} else if origin != "" {
-				// Validate origin against allowed hosts
-				if isOriginAllowed(origin, allowedHosts) {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
-				} else {
-					// Origin not allowed - don't set CORS headers
-					// Browser will block the response
-					http.Error(w, "Origin not allowed", http.StatusForbidden)
-					return
+			} else {
+				origin := r.Header.Get("Origin")
+
+				// If no allowed hosts configured, allow all origins (backwards compatible)
+				if len(allowedHosts) == 0 {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else if origin != "" {
+					// Validate origin against allowed hosts
+					if isOriginAllowed(origin, allowedHosts) {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+						w.Header().Set("Access-Control-Allow-Credentials", "true")
+					} else {
+						// Origin not allowed - don't set CORS headers
+						// Browser will block the response
+						http.Error(w, "Origin not allowed", http.StatusForbidden)
+						return
+					}
 				}
 			}
 
