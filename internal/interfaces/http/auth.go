@@ -1,17 +1,16 @@
 package http
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"parsa/internal/domain/user"
 	"parsa/internal/infrastructure/postgres"
@@ -26,7 +25,8 @@ type AuthHandler struct {
 	mobileCallbackURL      string
 	webCallbackURL         string
 	appleMobileCallbackURL string
-	appleCallbackTemplate  *template.Template // Add this field
+	appleCallbackTemplate  *template.Template
+	templateOnce           sync.Once
 }
 
 func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, mobileCallbackURL, webCallbackURL string) *AuthHandler {
@@ -301,17 +301,6 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Read body for logging, then restore it for ParseForm
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Apple OAuth: Failed to read request body: %v", err)
-		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
-		return
-	}
-
-	// Restore the body so ParseForm can read it
-	r.Body = io.NopCloser(bytes.NewReader(body))
-
 	// Parse form data (Apple sends as application/x-www-form-urlencoded)
 	if err := r.ParseForm(); err != nil {
 		log.Printf("Apple OAuth: Failed to parse form: %v", err)
@@ -558,26 +547,29 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback
-func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, error string) {
-	// Parse template once and cache it (lazy initialization)
-	if h.appleCallbackTemplate == nil {
+func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, errorMsg string) {
+	// Thread-safe one-time template initialization
+	var templateErr error
+	h.templateOnce.Do(func() {
 		tmplPath := filepath.Join("web", "apple-oauth-callback.html")
-		tmpl, err := template.ParseFiles(tmplPath)
-		if err != nil {
-			log.Printf("Apple OAuth: Failed to load callback template: %v", err)
-			// Fallback redirect
-			if error != "" {
-				redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
-				http.Redirect(w, r, redirectURL, http.StatusFound)
-			} else if token != "" {
-				redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-				http.Redirect(w, r, redirectURL, http.StatusFound)
-			} else {
-				http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
-			}
-			return
+		h.appleCallbackTemplate, templateErr = template.ParseFiles(tmplPath)
+		if templateErr != nil {
+			log.Printf("Apple OAuth: Failed to load callback template: %v", templateErr)
 		}
-		h.appleCallbackTemplate = tmpl
+	})
+
+	// If template failed to load, use fallback redirect
+	if h.appleCallbackTemplate == nil {
+		if errorMsg != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", errorMsg)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
+		} else if token != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
+		} else {
+			http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
+		}
+		return
 	}
 
 	// Template data - encode as JSON for safe embedding in JavaScript
@@ -593,8 +585,8 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Req
 	} else {
 		tokenJSON = template.JS("null")
 	}
-	if error != "" {
-		errorBytes, _ := json.Marshal(error)
+	if errorMsg != "" {
+		errorBytes, _ := json.Marshal(errorMsg)
 		errorJSON = template.JS(errorBytes)
 	} else {
 		errorJSON = template.JS("null")
@@ -610,8 +602,8 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Req
 	if err := h.appleCallbackTemplate.Execute(w, data); err != nil {
 		log.Printf("Apple OAuth: Failed to render callback template: %v", err)
 		// Fallback redirect
-		if error != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", error)
+		if errorMsg != "" {
+			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", errorMsg)
 			http.Redirect(w, r, redirectURL, http.StatusFound)
 		} else if token != "" {
 			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
