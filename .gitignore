@@ -5,17 +5,13 @@ bin/
 *.so
 *.dylib
 parsa
-CLAUDE.md
-transactions.json
-accounts.json
-openfinanceproviderapi.json
-todos.txt
-scripts/
-*.p8
+parsa-api
 
 # Environment files
 .env
 .env.local
+.env.production
+.env.backup
 
 # Go
 *.test
@@ -28,6 +24,7 @@ vendor/
 *.swp
 *.swo
 *~
+.claude/
 
 # OS
 .DS_Store
@@ -35,3 +32,26 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Keys
+*.p8
+*.key
+*.pem
+*.crt
+*.cer
+*.pfx
+*.p12
+*.jks
+*.cer
+*.crt
+*.pem
+*.pfx
+*.p12
+
+# Others
+CLAUDE.md
+transactions.json
+accounts.json
+openfinanceproviderapi.json
+todos.txt
+scripts/
