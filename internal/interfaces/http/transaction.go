@@ -89,10 +89,20 @@ type BatchPatchRequest struct {
 	Transactions []PatchTransactionItem `json:"transactions"`
 }
 
+// BatchItemResult represents the result of a single batch operation item
+type BatchItemResult struct {
+	Index       int                     `json:"index"`
+	Success     bool                    `json:"success"`
+	Transaction *TransactionAPIResponse `json:"transaction,omitempty"`
+	Error       string                  `json:"error,omitempty"`
+}
+
 // BatchResponse is the response for batch operations
 type BatchResponse struct {
-	Count   int                      `json:"count"`
-	Results []TransactionAPIResponse `json:"results"`
+	TotalCount   int               `json:"totalCount"`
+	SuccessCount int               `json:"successCount"`
+	FailureCount int               `json:"failureCount"`
+	Results      []BatchItemResult `json:"results"`
 }
 
 // HandleListTransactions returns paginated transactions for a user (optionally filtered by account)
@@ -450,18 +460,29 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Create all transactions
-	results := make([]TransactionAPIResponse, 0, len(req.Transactions))
-	for _, txReq := range req.Transactions {
+	// Create all transactions, collecting results for each
+	results := make([]BatchItemResult, 0, len(req.Transactions))
+	successCount := 0
+
+	for idx, txReq := range req.Transactions {
+		// Validate required fields
 		if txReq.Description == "" || txReq.TransactionDate == "" {
-			http.Error(w, "description and transactionDate are required for all transactions", http.StatusBadRequest)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   "description and transactionDate are required",
+			})
+			continue
 		}
 
 		transactionDate, err := time.Parse("2006-01-02", txReq.TransactionDate)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Invalid transactionDate format for transaction: %s (use YYYY-MM-DD)", txReq.TransactionDate), http.StatusBadRequest)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Invalid transactionDate format (use YYYY-MM-DD): %v", err),
+			})
+			continue
 		}
 
 		txType := txReq.Type
@@ -487,19 +508,39 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 		})
 
 		if err != nil {
-			log.Printf("Error creating transaction in batch: %v", err)
-			http.Error(w, "Failed to create transactions", http.StatusInternalServerError)
-			return
+			log.Printf("Error creating transaction in batch at index %d: %v", idx, err)
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Failed to create transaction: %v", err),
+			})
+			continue
 		}
 
-		results = append(results, toTransactionAPIResponse(txn))
+		successCount++
+		txnResponse := toTransactionAPIResponse(txn)
+		results = append(results, BatchItemResult{
+			Index:       idx,
+			Success:     true,
+			Transaction: &txnResponse,
+		})
+	}
+
+	// Determine appropriate HTTP status code
+	status := http.StatusCreated
+	if successCount == 0 {
+		status = http.StatusBadRequest
+	} else if successCount < len(req.Transactions) {
+		status = 207 // Multi-Status
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(BatchResponse{
-		Count:   len(results),
-		Results: results,
+		TotalCount:   len(req.Transactions),
+		SuccessCount: successCount,
+		FailureCount: len(req.Transactions) - successCount,
+		Results:      results,
 	})
 }
 
@@ -523,39 +564,61 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Verify all transaction IDs are provided and check ownership
-	for _, patchReq := range req.Transactions {
+	// Update all transactions, collecting results for each
+	results := make([]BatchItemResult, 0, len(req.Transactions))
+	successCount := 0
+
+	for idx, patchReq := range req.Transactions {
+		// Validate transaction ID
 		if patchReq.ID == "" {
-			http.Error(w, "id is required for all transactions", http.StatusBadRequest)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   "id is required",
+			})
+			continue
 		}
 
+		// Verify transaction exists and ownership
 		txn, err := h.transactionRepo.GetByID(r.Context(), patchReq.ID)
 		if err != nil {
 			log.Printf("Error getting transaction %s for batch patch: %v", patchReq.ID, err)
-			http.Error(w, "Failed to get transaction", http.StatusInternalServerError)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Failed to get transaction: %v", err),
+			})
+			continue
 		}
 		if txn == nil {
-			http.Error(w, fmt.Sprintf("Transaction %s not found", patchReq.ID), http.StatusNotFound)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Transaction %s not found", patchReq.ID),
+			})
+			continue
 		}
 
 		acc, err := h.accountRepo.GetByID(r.Context(), txn.AccountID)
 		if err != nil || acc == nil {
-			http.Error(w, fmt.Sprintf("Account for transaction %s not found", patchReq.ID), http.StatusNotFound)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Account for transaction %s not found", patchReq.ID),
+			})
+			continue
 		}
 		if acc.UserID != userID {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   "Forbidden: transaction does not belong to user",
+			})
+			continue
 		}
-	}
 
-	// Update all transactions
-	results := make([]TransactionAPIResponse, 0, len(req.Transactions))
-	for _, patchReq := range req.Transactions {
-		txn, err := h.transactionRepo.Update(r.Context(), patchReq.ID, transaction.UpdateTransactionParams{
+		// Update transaction
+		updatedTxn, err := h.transactionRepo.Update(r.Context(), patchReq.ID, transaction.UpdateTransactionParams{
 			Description: patchReq.Description,
 			Category:    patchReq.Category,
 			Considered:  patchReq.Considered,
@@ -564,16 +627,37 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 
 		if err != nil {
 			log.Printf("Error updating transaction %s in batch: %v", patchReq.ID, err)
-			http.Error(w, "Failed to update transactions", http.StatusInternalServerError)
-			return
+			results = append(results, BatchItemResult{
+				Index:   idx,
+				Success: false,
+				Error:   fmt.Sprintf("Failed to update transaction: %v", err),
+			})
+			continue
 		}
 
-		results = append(results, toTransactionAPIResponse(txn))
+		successCount++
+		txnResponse := toTransactionAPIResponse(updatedTxn)
+		results = append(results, BatchItemResult{
+			Index:       idx,
+			Success:     true,
+			Transaction: &txnResponse,
+		})
+	}
+
+	// Determine appropriate HTTP status code
+	status := http.StatusOK
+	if successCount == 0 {
+		status = http.StatusBadRequest
+	} else if successCount < len(req.Transactions) {
+		status = 207 // Multi-Status
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(BatchResponse{
-		Count:   len(results),
-		Results: results,
+		TotalCount:   len(req.Transactions),
+		SuccessCount: successCount,
+		FailureCount: len(req.Transactions) - successCount,
+		Results:      results,
 	})
 }
