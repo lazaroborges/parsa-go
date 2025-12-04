@@ -119,6 +119,22 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Construct OAuth callback URLs from HOST_URL
+	hostURL := getEnv("HOST_URL", "")
+	buildCallbackURL := func(path string, overrideEnv string) string {
+		if override := getEnv(overrideEnv, ""); override != "" {
+			return override
+		}
+		if hostURL != "" {
+			return fmt.Sprintf("%s%s", hostURL, path)
+		}
+		return ""
+	}
+
+	googleWebURL := buildCallbackURL("/api/auth/oauth/callback", "GOOGLE_WEB_CALLBACK_URL")
+	googleMobileURL := buildCallbackURL("/api/auth/oauth/mobile/callback", "GOOGLE_MOBILE_CALLBACK_URL")
+	appleMobileURL := buildCallbackURL("/api/auth/oauth/apple/mobile/callback", "APPLE_MOBILE_CALLBACK_URL")
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port:         getEnv("PORT", "8080"),
@@ -137,15 +153,15 @@ func Load() (*Config, error) {
 			Google: GoogleOAuthConfig{
 				ClientID:          getEnv("GOOGLE_CLIENT_ID", ""),
 				ClientSecret:      getEnv("GOOGLE_CLIENT_SECRET", ""),
-				WebCallbackURL:    getEnv("GOOGLE_WEB_CALLBACK_URL", ""),
-				MobileCallbackURL: getEnv("GOOGLE_MOBILE_CALLBACK_URL", ""),
+				WebCallbackURL:    googleWebURL,
+				MobileCallbackURL: googleMobileURL,
 			},
 			Apple: AppleOAuthConfig{
 				TeamID:            getEnv("APPLE_TEAM_ID", ""),
 				KeyID:             getEnv("APPLE_KEY_ID", ""),
 				ClientID:          getEnv("APPLE_CLIENT_ID", ""),
 				PrivateKeyPath:    getEnv("APPLE_PRIVATE_KEY_PATH", ""),
-				MobileCallbackURL: getEnv("APPLE_MOBILE_CALLBACK_URL", ""),
+				MobileCallbackURL: appleMobileURL,
 			},
 		},
 		JWT: JWTConfig{
