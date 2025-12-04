@@ -477,10 +477,11 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 
 		transactionDate, err := time.Parse("2006-01-02", txReq.TransactionDate)
 		if err != nil {
+			log.Printf("Error parsing transactionDate at index %d for account %s: %v", idx, txReq.AccountID, err)
 			results = append(results, BatchItemResult{
 				Index:   idx,
 				Success: false,
-				Error:   fmt.Sprintf("Invalid transactionDate format (use YYYY-MM-DD): %v", err),
+				Error:   "Invalid transactionDate format",
 			})
 			continue
 		}
@@ -508,11 +509,11 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 		})
 
 		if err != nil {
-			log.Printf("Error creating transaction in batch at index %d: %v", idx, err)
+			log.Printf("Error creating transaction in batch at index %d for account %s: %v", idx, txReq.AccountID, err)
 			results = append(results, BatchItemResult{
 				Index:   idx,
 				Success: false,
-				Error:   fmt.Sprintf("Failed to create transaction: %v", err),
+				Error:   "Failed to create transaction",
 			})
 			continue
 		}
@@ -582,11 +583,11 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 		// Verify transaction exists and ownership
 		txn, err := h.transactionRepo.GetByID(r.Context(), patchReq.ID)
 		if err != nil {
-			log.Printf("Error getting transaction %s for batch patch: %v", patchReq.ID, err)
+			log.Printf("Error getting transaction %s for batch patch at index %d: %v", patchReq.ID, idx, err)
 			results = append(results, BatchItemResult{
 				Index:   idx,
 				Success: false,
-				Error:   fmt.Sprintf("Failed to get transaction: %v", err),
+				Error:   "Failed to get transaction",
 			})
 			continue
 		}
@@ -601,10 +602,11 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 
 		acc, err := h.accountRepo.GetByID(r.Context(), txn.AccountID)
 		if err != nil || acc == nil {
+			log.Printf("Error getting account %s for transaction %s in batch patch at index %d: %v", txn.AccountID, patchReq.ID, idx, err)
 			results = append(results, BatchItemResult{
 				Index:   idx,
 				Success: false,
-				Error:   fmt.Sprintf("Account for transaction %s not found", patchReq.ID),
+				Error:   "Account not found",
 			})
 			continue
 		}
@@ -626,11 +628,11 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 		})
 
 		if err != nil {
-			log.Printf("Error updating transaction %s in batch: %v", patchReq.ID, err)
+			log.Printf("Error updating transaction %s in batch at index %d: %v", patchReq.ID, idx, err)
 			results = append(results, BatchItemResult{
 				Index:   idx,
 				Success: false,
-				Error:   fmt.Sprintf("Failed to update transaction: %v", err),
+				Error:   "Failed to update transaction",
 			})
 			continue
 		}
