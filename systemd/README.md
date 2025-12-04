@@ -24,10 +24,9 @@ sudo -u postgres psql
 ```
 
 ```sql
-CREATE USER parsa WITH PASSWORD 'your_secure_password';
-CREATE DATABASE parsa OWNER parsa;
-GRANT ALL PRIVILEGES ON DATABASE parsa TO parsa;
-\q
+CREATE USER parsa_admin WITH PASSWORD 'your_secure_password';
+CREATE DATABASE parsadb OWNER parsa_admin;
+GRANT ALL PRIVILEGES ON DATABASE parsadb TO parsa_admin;
 ```
 
 ## Deployment (from dev machine)
@@ -68,6 +67,35 @@ sudo systemctl daemon-reload
 sudo systemctl enable parsa-go
 sudo systemctl start parsa-go
 ```
+
+## Granting Access to TLS Certificates
+
+To allow the `parsa` service account to read Let's Encrypt TLS certificates:
+
+1. **Grant 'read' and 'execute' permissions (directory traversal) to the certificate directories:**
+
+```bash
+sudo setfacl -R -m u:parsa:rx /etc/letsencrypt/live
+sudo setfacl -R -m u:parsa:rx /etc/letsencrypt/archive
+```
+
+2. **Ensure these permissions persist after certificate renewal:**  
+Create a Certbot deploy hook that reapplies access controls after each renewal.
+
+```bash
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/01-permit-parsa.sh > /dev/null <<'EOF'
+#!/bin/bash
+setfacl -R -m u:parsa:rx /etc/letsencrypt/live
+setfacl -R -m u:parsa:rx /etc/letsencrypt/archive
+EOF
+```
+
+3. **Make the hook script executable:**
+
+```bash
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/01-permit-parsa.sh
+```
+
 
 ## Managing the Service
 
@@ -118,6 +146,49 @@ Grant parsa user read access to certs:
 sudo usermod -aG ssl-cert parsa
 sudo chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive
 sudo chmod -R g+rx /etc/letsencrypt/live /etc/letsencrypt/archive
+```
+
+## 🛠️ Network Troubleshooting (Magalu Cloud / MTU Issues)
+
+If the application is running but not accessible via browsers (timeouts/hanging), while `curl` requests work fine, you are likely facing an **MTU/MSS Mismatch**. This is common in cloud providers using overlay networks (like VXLAN) where the packet headers exceed the standard 1500 MTU.
+
+To fix this, we enforce **MSS Clamping** via `iptables`.
+
+### 1. Install Persistence Tool
+
+Ensure `iptables` rules survive reboots:
+
+```bash
+sudo apt-get update
+sudo apt-get install iptables-persistent -y
+```
+
+### 2. Apply the Clamping Rule
+
+We force the TCP MSS to 1200 bytes to safely fit inside the tunnel overhead. (Note: Replace `ens3` with your actual network interface if different).
+
+```bash
+# Clean existing mangle rules
+sudo iptables -t mangle -F
+
+# Apply the MSS clamp
+sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o ens3 -j TCPMSS --set-mss 1200
+```
+
+### 3. Save Changes
+
+Persist the rules to `/etc/iptables/rules.v4`:
+
+```bash
+sudo netfilter-persistent save
+```
+
+### Verification
+
+Check if the rule is active:
+
+```bash
+sudo iptables -t mangle -L -v
 ```
 
 ## Troubleshooting

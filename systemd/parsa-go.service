@@ -1,33 +1,70 @@
 [Unit]
-Description=Parsa Go API Server
+Description=Parsa Personal Finance API
 Documentation=https://github.com/lazaroborges/parsa-go
-After=network.target postgresql.service
+# 'network-online' is safer than 'network' for APIs to ensure IP availability
+After=network-online.target postgresql.service
+Wants=network-online.target
 Requires=postgresql.service
 
 [Service]
-Type=simple
+# User/Group
 User=parsa
 Group=parsa
-WorkingDirectory=/home/parsa/parsa-go
-ExecStart=/home/parsa/parsa-go/bin/parsa
-EnvironmentFile=/home/parsa/parsa-go/.env
-Restart=on-failure
-RestartSec=5
 
-# Logging (stdout/stderr go to journald)
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=parsa-go
+# Deployment Context
+Type=simple
+WorkingDirectory=/opt/parsa-go
+ExecStart=/opt/parsa-go/parsa
+# Graceful shutdown: Send SIGINT (Ctrl+C) instead of SIGTERM if your Go app handles context cancellation
+KillSignal=SIGINT
+TimeoutStopSec=10s
 
-# Security hardening
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/parsa/parsa-go
+# Environment Management
+# PREFERRED: Load from a file (secure, cleaner)
+EnvironmentFile=/opt/parsa-go/.env
+# ALTERNATIVE: Inline (messy, visible in 'systemctl show')
+# Environment="PORT=8080" "DB_HOST=localhost"
 
-# Resource limits (adjust as needed)
+# Restart Policy
+Restart=always
+# Wait a bit before restarting to prevent tight loops on persistent failures
+RestartSec=3
+
+# Resource Limits
+# Go apps manage many goroutines/connections; system default (1024) is often too low
 LimitNOFILE=65535
+
+# -----------------------------------------------------------
+# Security Hardening (Crucial for FinTech/Public APIs)
+# -----------------------------------------------------------
+# Prevent the app from gaining root privileges
+NoNewPrivileges=true
+
+# Hide /home and /root directories from the app
+ProtectHome=true
+
+# Make the entire file system Read-Only for the app...
+ProtectSystem=strict
+# ...except for these specific directories (if you log to file or use SQLite)
+# ReadWritePaths=/var/log/parsa-go
+
+# Create a private /tmp directory just for this process
+PrivateTmp=true
+
+# Hide other processes from this service
+ProtectProc=invisible
+
+# Prevent the app from loading kernel modules
+ProtectKernelModules=true
+
+# Disallow changing kernel tunables
+ProtectKernelTunables=true
+
+# Restrict the app to only standard network and file socket families
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
