@@ -8,13 +8,13 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"parsa/internal/domain/user"
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/shared/auth"
+	"parsa/internal/web"
 )
 
 type AuthHandler struct {
@@ -551,8 +551,7 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Req
 	// Thread-safe one-time template initialization
 	var templateErr error
 	h.templateOnce.Do(func() {
-		tmplPath := filepath.Join("web", "apple-oauth-callback.html")
-		h.appleCallbackTemplate, templateErr = template.ParseFiles(tmplPath)
+		h.appleCallbackTemplate, templateErr = template.ParseFS(web.FS, "apple-oauth-callback.html")
 		if templateErr != nil {
 			log.Printf("Apple OAuth: Failed to load callback template: %v", templateErr)
 		}
