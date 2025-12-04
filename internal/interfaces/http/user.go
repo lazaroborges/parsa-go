@@ -58,6 +58,11 @@ func (h *UserHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type UserResponse struct {
+	*user.User
+	HasValidKey bool `json:"hasValidKey"`
+}
+
 func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	user, err := h.userRepo.GetByID(r.Context(), userID)
 	if err != nil {
@@ -90,8 +95,16 @@ func (h *UserHandler) handleGetMe(w http.ResponseWriter, r *http.Request, userID
 	balanceTotal := checkingAndSavingsBalance - creditCardBalance
 	user.BalanceTotal = &balanceTotal
 
+	// Check if provider_key exists (not null/empty)
+	hasValidKey := user.ProviderKey != nil && *user.ProviderKey != ""
+
+	response := UserResponse{
+		User:        user,
+		HasValidKey: hasValidKey,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID int64) {
