@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log"
 
+	"parsa/internal/domain/account"
+	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
-	"parsa/internal/domain/user"
-	"parsa/internal/domain/account"
 )
 
 // SyncResult contains the results of a sync operation
@@ -46,6 +46,14 @@ func NewAccountSyncService(
 
 // SyncUserAccountsWithData syncs accounts using pre-fetched account data.
 func (s *AccountSyncService) SyncUserAccountsWithData(ctx context.Context, userID int64, accountResp *ofclient.AccountResponse) (*SyncResult, error) {
+	if accountResp == nil {
+		return &SyncResult{
+			UserID:        userID,
+			AccountsFound: 0,
+			Errors:        []string{"account response is nil"},
+		}, fmt.Errorf("account response is nil")
+	}
+
 	result := &SyncResult{
 		UserID:        userID,
 		AccountsFound: len(accountResp.Data),
