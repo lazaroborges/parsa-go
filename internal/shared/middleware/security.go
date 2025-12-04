@@ -144,8 +144,8 @@ func IsHostAllowed(host string, allowedHosts []string) bool {
 	for _, allowedHost := range allowedHosts {
 		allowedHost = strings.ToLower(strings.TrimSpace(allowedHost))
 		allowedHostWithoutPort := allowedHost
-		if idx := strings.Index(allowedHost, ":"); idx != -1 {
-			allowedHostWithoutPort = allowedHost[:idx]
+		if h, _, err := net.SplitHostPort(allowedHost); err == nil {
+			allowedHostWithoutPort = h
 		}
 
 		if host == allowedHost || hostWithoutPort == allowedHostWithoutPort {
