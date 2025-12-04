@@ -1,24 +1,40 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/openfinance"
 	"parsa/internal/domain/user"
+	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/shared/middleware"
 )
 
 type UserHandler struct {
-	userRepo    user.Repository
-	accountRepo account.Repository
+	userRepo               user.Repository
+	accountRepo            account.Repository
+	ofClient               ofclient.ClientInterface
+	accountSyncService     *openfinance.AccountSyncService
+	transactionSyncService *openfinance.TransactionSyncService
 }
 
-func NewUserHandler(userRepo user.Repository, accountRepo account.Repository) *UserHandler {
+func NewUserHandler(
+	userRepo user.Repository,
+	accountRepo account.Repository,
+	ofClient ofclient.ClientInterface,
+	accountSyncService *openfinance.AccountSyncService,
+	transactionSyncService *openfinance.TransactionSyncService,
+) *UserHandler {
 	return &UserHandler{
-		userRepo:    userRepo,
-		accountRepo: accountRepo,
+		userRepo:               userRepo,
+		accountRepo:            accountRepo,
+		ofClient:               ofClient,
+		accountSyncService:     accountSyncService,
+		transactionSyncService: transactionSyncService,
 	}
 }
 
@@ -86,7 +102,65 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	user, err := h.userRepo.Update(r.Context(), userID, params)
+	// If provider_key is being updated, verify it and fetch accounts in one call
+	if params.ProviderKey != nil && *params.ProviderKey != "" {
+		// Fetch accounts - this verifies the key AND gets the data we need
+		accountResp, statusCode, err := h.ofClient.GetAccountsWithStatus(r.Context(), *params.ProviderKey)
+		if err != nil {
+			// Check if it's a 401 (unauthorized)
+			if statusCode == http.StatusUnauthorized {
+				log.Printf("Invalid provider key for user %d: OpenFinance returned 401", userID)
+				http.Error(w, "Invalid provider key", http.StatusUnauthorized)
+				return
+			}
+			log.Printf("Error fetching accounts for user %d (status %d): %v", userID, statusCode, err)
+			http.Error(w, "Failed to verify provider key", http.StatusBadGateway)
+			return
+		}
+
+		// Status code is 200, accountResp is parsed and ready to use
+		// Save the user first
+		updatedUser, err := h.userRepo.Update(r.Context(), userID, params)
+		if err != nil {
+			log.Printf("Error updating user %d: %v", userID, err)
+			http.Error(w, "Failed to update user", http.StatusInternalServerError)
+			return
+		}
+
+		// Return 202 Accepted immediately with the updated user
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(updatedUser)
+
+		// Use the already-fetched account data to sync in background
+		// This avoids making another API call - we parse AND use the data concurrently
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			log.Printf("Starting account sync for user %d using pre-fetched data", userID)
+			accountResult, err := h.accountSyncService.SyncUserAccountsWithData(ctx, userID, accountResp)
+			if err != nil {
+				log.Printf("Error syncing accounts for user %d: %v", userID, err)
+				return
+			}
+			log.Printf("Account sync completed for user %d: created=%d, updated=%d", userID, accountResult.Created, accountResult.Updated)
+
+			// After account sync, sync transactions
+			log.Printf("Starting transaction sync for user %d after account sync", userID)
+			txResult, err := h.transactionSyncService.SyncUserTransactions(ctx, userID)
+			if err != nil {
+				log.Printf("Error syncing transactions for user %d: %v", userID, err)
+				return
+			}
+			log.Printf("Transaction sync completed for user %d: created=%d, updated=%d", userID, txResult.Created, txResult.Updated)
+		}()
+
+		return
+	}
+
+	// No provider_key update, proceed with normal update
+	updatedUser, err := h.userRepo.Update(r.Context(), userID, params)
 	if err != nil {
 		log.Printf("Error updating user %d: %v", userID, err)
 		http.Error(w, "Failed to update user", http.StatusInternalServerError)
@@ -94,5 +168,5 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(updatedUser)
 }

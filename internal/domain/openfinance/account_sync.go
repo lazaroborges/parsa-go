@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log"
 
+	"parsa/internal/domain/account"
+	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
-	"parsa/internal/domain/user"
-	"parsa/internal/domain/account"
 )
 
 // SyncResult contains the results of a sync operation
@@ -44,33 +44,24 @@ func NewAccountSyncService(
 	}
 }
 
-// SyncUserAccounts syncs accounts for a specific user
-func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64) (*SyncResult, error) {
+// SyncUserAccountsWithData syncs accounts using pre-fetched account data.
+func (s *AccountSyncService) SyncUserAccountsWithData(ctx context.Context, userID int64, accountResp *ofclient.AccountResponse) (*SyncResult, error) {
+	if accountResp == nil {
+		return &SyncResult{
+			UserID:        userID,
+			AccountsFound: 0,
+			Errors:        []string{"account response is nil"},
+		}, fmt.Errorf("account response is nil")
+	}
+
 	result := &SyncResult{
-		UserID: userID,
-		Errors: []string{},
+		UserID:        userID,
+		AccountsFound: len(accountResp.Data),
+		Errors:        []string{},
 	}
 
-	// Fetch user to get their provider key
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return result, fmt.Errorf("failed to get user: %w", err)
-	}
+	log.Printf("User %d: Syncing %d accounts", userID, result.AccountsFound)
 
-	if user.ProviderKey == nil || *user.ProviderKey == "" {
-		return result, fmt.Errorf("user has no provider key")
-	}
-
-	// Fetch accounts from Open Finance API
-	accountResp, err := s.client.GetAccounts(ctx, *user.ProviderKey)
-	if err != nil {
-		return result, fmt.Errorf("failed to fetch accounts from API: %w", err)
-	}
-
-	result.AccountsFound = len(accountResp.Data)
-	log.Printf("User %d: Found %d accounts from Open Finance API", userID, result.AccountsFound)
-
-	// Process each account
 	for _, apiAccount := range accountResp.Data {
 		if err := s.syncAccount(ctx, userID, apiAccount, result); err != nil {
 			errMsg := fmt.Sprintf("failed to sync account %s: %v", apiAccount.AccountID, err)
@@ -83,6 +74,25 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 		userID, result.Created, result.Updated, len(result.Errors))
 
 	return result, nil
+}
+
+// SyncUserAccounts syncs accounts for a specific user by fetching from API
+func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64) (*SyncResult, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user.ProviderKey == nil || *user.ProviderKey == "" {
+		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("user has no provider key")
+	}
+
+	accountResp, err := s.client.GetAccounts(ctx, *user.ProviderKey)
+	if err != nil {
+		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("failed to fetch accounts from API: %w", err)
+	}
+
+	return s.SyncUserAccountsWithData(ctx, userID, accountResp)
 }
 
 // syncAccount syncs a single account

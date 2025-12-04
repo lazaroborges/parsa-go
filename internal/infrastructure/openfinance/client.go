@@ -222,49 +222,54 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// GetAccounts fetches all accounts for a user using their API key
-func (c *Client) GetAccounts(ctx context.Context, apiKey string) (*AccountResponse, error) {
+// GetAccountsWithStatus fetches accounts and returns both the response and HTTP status code.
+// This allows callers to handle different status codes (e.g., 401) while still parsing successful responses.
+func (c *Client) GetAccountsWithStatus(ctx context.Context, apiKey string) (*AccountResponse, int, error) {
 	url := c.baseURL + accountsPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add Bearer token authentication
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
+		return nil, 0, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Handle non-200 status codes
 	if resp.StatusCode != http.StatusOK {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
-			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, resp.StatusCode, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
-		return nil, fmt.Errorf("API error (status %d): %s - %s", resp.StatusCode, errResp.Error, errResp.Message)
+		return nil, resp.StatusCode, fmt.Errorf("API error (status %d): %s - %s", resp.StatusCode, errResp.Error, errResp.Message)
 	}
 
 	var accountResp AccountResponse
 	if err := json.Unmarshal(body, &accountResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	if !accountResp.Success {
-		return nil, fmt.Errorf("API returned success=false")
+		return nil, resp.StatusCode, fmt.Errorf("API returned success=false")
 	}
 
-	return &accountResp, nil
+	return &accountResp, resp.StatusCode, nil
+}
+
+// GetAccounts fetches all accounts for a user using their API key
+func (c *Client) GetAccounts(ctx context.Context, apiKey string) (*AccountResponse, error) {
+	resp, _, err := c.GetAccountsWithStatus(ctx, apiKey)
+	return resp, err
 }
 
 // GetTransactions fetches all transactions for a user using their API key

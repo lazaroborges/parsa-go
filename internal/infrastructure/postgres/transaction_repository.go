@@ -58,7 +58,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at,
-		       considered, is_open_finance, tags, manipulated
+		       considered, is_open_finance, tags, manipulated, notes
 		FROM transactions
 		WHERE id = $1
 	`
@@ -73,7 +73,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&txn.CreatedAt, &txn.UpdatedAt,
-		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated,
+		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
 	)
 
 	if providerCreatedAt.Valid {
@@ -99,7 +99,7 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 	query := `
 		SELECT id, account_id, amount, description, category, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at,
-		       considered, is_open_finance, tags, manipulated
+		       considered, is_open_finance, tags, manipulated, notes
 		FROM transactions
 		WHERE account_id = $1
 		ORDER BY transaction_date DESC, created_at DESC
@@ -120,7 +120,7 @@ func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, 
 	query := `
 		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.transaction_date, t.type, t.status,
 		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
-		       t.considered, t.is_open_finance, t.tags, t.manipulated
+		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
 		WHERE a.user_id = $1
@@ -169,7 +169,7 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
 			&txn.CreatedAt, &txn.UpdatedAt,
-			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated,
+			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan transaction: %w", err)
@@ -203,33 +203,39 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		    transaction_date = COALESCE($4, transaction_date),
 		    type = COALESCE($5, type),
 		    status = COALESCE($6, status),
+		    considered = COALESCE($7, considered),
+		    notes = COALESCE($8, notes),
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $7
+		WHERE id = $9
 		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at
+		          provider_created_at, provider_updated_at, created_at, updated_at,
+		          considered, is_open_finance, tags, manipulated, notes
 	`
 
-	var transaction transaction.Transaction
+	var txn transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
+	var tags []byte
 
 	err := r.db.QueryRowContext(
 		ctx, query,
 		params.Amount, params.Description, params.Category, params.TransactionDate,
-		params.Type, params.Status, id,
+		params.Type, params.Status, params.Considered, params.Notes, id,
 	).Scan(
-		&transaction.ID, &transaction.AccountID, &transaction.Amount,
-		&transaction.Description, &transaction.Category, &transaction.TransactionDate,
-		&transaction.Type, &transaction.Status,
+		&txn.ID, &txn.AccountID, &txn.Amount,
+		&txn.Description, &txn.Category, &txn.TransactionDate,
+		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
-		&transaction.CreatedAt, &transaction.UpdatedAt,
+		&txn.CreatedAt, &txn.UpdatedAt,
+		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
 	)
 
 	if providerCreatedAt.Valid {
-		transaction.ProviderCreatedAt = providerCreatedAt.Time
+		txn.ProviderCreatedAt = providerCreatedAt.Time
 	}
 	if providerUpdatedAt.Valid {
-		transaction.ProviderUpdatedAt = providerUpdatedAt.Time
+		txn.ProviderUpdatedAt = providerUpdatedAt.Time
 	}
+	txn.Tags = []string{}
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("transaction not found")
@@ -238,7 +244,81 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		return nil, fmt.Errorf("failed to update transaction: %w", err)
 	}
 
-	return &transaction, nil
+	return &txn, nil
+}
+
+// UpdateBatch updates multiple transactions in a single query
+// Only updates fields that are non-nil in each params entry
+func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struct {
+	ID     string
+	Params transaction.UpdateTransactionParams
+}) ([]*transaction.Transaction, error) {
+	if len(updates) == 0 {
+		return nil, nil
+	}
+
+	// Process each update individually but in a transaction for consistency
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	results := make([]*transaction.Transaction, 0, len(updates))
+
+	query := `
+		UPDATE transactions
+		SET description = COALESCE($1, description),
+		    category = COALESCE($2, category),
+		    considered = COALESCE($3, considered),
+		    notes = COALESCE($4, notes),
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $5
+		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
+		          provider_created_at, provider_updated_at, created_at, updated_at,
+		          considered, is_open_finance, tags, manipulated, notes
+	`
+
+	for _, u := range updates {
+		var txn transaction.Transaction
+		var providerCreatedAt, providerUpdatedAt sql.NullTime
+		var tags []byte
+
+		err := tx.QueryRowContext(
+			ctx, query,
+			u.Params.Description, u.Params.Category, u.Params.Considered, u.Params.Notes, u.ID,
+		).Scan(
+			&txn.ID, &txn.AccountID, &txn.Amount,
+			&txn.Description, &txn.Category, &txn.TransactionDate,
+			&txn.Type, &txn.Status,
+			&providerCreatedAt, &providerUpdatedAt,
+			&txn.CreatedAt, &txn.UpdatedAt,
+			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
+		)
+
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("transaction %s not found", u.ID)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to update transaction %s: %w", u.ID, err)
+		}
+
+		if providerCreatedAt.Valid {
+			txn.ProviderCreatedAt = providerCreatedAt.Time
+		}
+		if providerUpdatedAt.Valid {
+			txn.ProviderUpdatedAt = providerUpdatedAt.Time
+		}
+		txn.Tags = []string{}
+
+		results = append(results, &txn)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return results, nil
 }
 
 func (r *TransactionRepository) Delete(ctx context.Context, id string) error {

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strings"
 )
@@ -124,4 +125,33 @@ func RequireHTTPS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// IsHostAllowed validates a host against the allowed hosts list.
+// Used for preventing redirect poisoning attacks when redirecting HTTP to HTTPS.
+// Returns true if no allowed hosts are configured (backwards compatible).
+func IsHostAllowed(host string, allowedHosts []string) bool {
+	if len(allowedHosts) == 0 {
+		return true
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+	hostWithoutPort, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostWithoutPort = host // No port present
+	}
+
+	for _, allowedHost := range allowedHosts {
+		allowedHost = strings.ToLower(strings.TrimSpace(allowedHost))
+		allowedHostWithoutPort := allowedHost
+		if h, _, err := net.SplitHostPort(allowedHost); err == nil {
+			allowedHostWithoutPort = h
+		}
+
+		if host == allowedHost || hostWithoutPort == allowedHostWithoutPort {
+			return true
+		}
+	}
+
+	return false
 }
