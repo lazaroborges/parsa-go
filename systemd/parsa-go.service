@@ -1,0 +1,33 @@
+[Unit]
+Description=Parsa Go API Server
+Documentation=https://github.com/lazaroborges/parsa-go
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=parsa
+Group=parsa
+WorkingDirectory=/home/parsa/parsa-go
+ExecStart=/home/parsa/parsa-go/bin/parsa
+EnvironmentFile=/home/parsa/parsa-go/.env
+Restart=on-failure
+RestartSec=5
+
+# Logging (stdout/stderr go to journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=parsa-go
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/parsa/parsa-go
+
+# Resource limits (adjust as needed)
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
