@@ -177,16 +177,25 @@ func (s *TransactionSyncService) processTransaction(
 	// Translate category from OpenFinance format to ParsaName
 	parsaCategory := transaction.TranslateCategory(apiTx.Category)
 
+	// Store original values before any manipulation
+	originalDesc := apiTx.Description
+	var originalCat *string
+	if apiTx.Category != nil {
+		originalCat = apiTx.Category
+	}
+
 	// Prepare upsert params
 	upsertParams := transaction.UpsertTransactionParams{
-		ID:              apiTx.ID,
-		AccountID:       account.ID,
-		Amount:          amount,
-		Description:     apiTx.Description,
-		Category:        parsaCategory,
-		TransactionDate: *txDate,
-		Type:            apiTx.Type,
-		Status:          apiTx.Status,
+		ID:                  apiTx.ID,
+		AccountID:           account.ID,
+		Amount:              amount,
+		Description:         apiTx.Description,
+		Category:            parsaCategory,
+		OriginalDescription: &originalDesc,
+		OriginalCategory:    originalCat,
+		TransactionDate:     *txDate,
+		Type:                apiTx.Type,
+		Status:              apiTx.Status,
 	}
 
 	// Upsert transaction

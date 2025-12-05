@@ -10,6 +10,8 @@ type Transaction struct {
 	Amount            float64   `json:"amount"`
 	Description       string    `json:"description"`
 	Category          *string   `json:"category,omitempty"`
+	OriginalDescription *string  `json:"originalDescription,omitempty"`
+	OriginalCategory   *string  `json:"originalCategory,omitempty"`
 	TransactionDate   time.Time `json:"transactionDate"`
 	Type              string    `json:"type"`   // "DEBIT" or "CREDIT"
 	Status            string    `json:"status"` // "PENDING" or "POSTED"
@@ -53,6 +55,8 @@ type UpsertTransactionParams struct {
 	Amount            float64
 	Description       string
 	Category          *string
+	OriginalDescription *string
+	OriginalCategory   *string
 	TransactionDate   time.Time
 	Type              string
 	Status            string
