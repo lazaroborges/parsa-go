@@ -1,0 +1,13 @@
+[Unit]
+Description=Parsa Backup to Magalu S3
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+# If you used Method B above, keep this as root
+User=root
+# If you used Method A, change this to your username (e.g., debian)
+# User=debian
+
+EnvironmentFile=/opt/parsa-go/.env
+ExecStart=/usr/local/bin/parsa-snapshot.sh
