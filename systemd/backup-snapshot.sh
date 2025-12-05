@@ -40,7 +40,6 @@ echo "3. Uploading to Magalu Bucket: $MG_BUCKET..."
 # Syntax: mgc object-storage objects upload <source> <destination_bucket>/<filename>
 mgc object-storage objects upload "$BACKUP_DIR/$ARCHIVE_NAME" "$MG_BUCKET/$ARCHIVE_NAME"
 
-
 # --- 4. Cleanup Local Storage ---
 echo "4. Cleaning up old local files..."
 find "$BACKUP_DIR" -type f -name "parsa_backup_*.tar.gz" -mtime +2 -delete
