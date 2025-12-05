@@ -83,6 +83,21 @@ func (s *Service) DeleteAccount(ctx context.Context, accountID string, userID in
 	return s.repo.Delete(ctx, accountID)
 }
 
+// UpdateAccount updates an account after verifying ownership
+func (s *Service) UpdateAccount(ctx context.Context, accountID string, params UpdateParams, userID int64) (*Account, error) {
+	// Verify ownership before update
+	account, err := s.GetAccount(ctx, accountID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if account.UserID != userID {
+		return nil, ErrForbidden
+	}
+
+	return s.repo.Update(ctx, accountID, params)
+}
+
 // UpsertAccount creates or updates an account with validation
 func (s *Service) UpsertAccount(ctx context.Context, params UpsertParams) (*Account, error) {
 	// Apply default currency if not provided

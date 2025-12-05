@@ -29,6 +29,12 @@ type CreateAccountRequest struct {
 	Balance     float64 `json:"balance"`
 }
 
+// UpdateAccountRequest contains fields that can be updated via PATCH
+type UpdateAccountRequest struct {
+	Order        *int  `json:"order,omitempty"`
+	HiddenByUser *bool `json:"hiddenByUser,omitempty"`
+}
+
 // AccountResponse is the mobile-friendly response format
 type AccountResponse struct {
 	AccountID     string   `json:"accountId"`
@@ -99,6 +105,8 @@ func (h *AccountHandler) HandleAccountByID(w http.ResponseWriter, r *http.Reques
 	switch r.Method {
 	case http.MethodGet:
 		h.handleGetAccountByID(w, r, userID, accountID)
+	case http.MethodPatch:
+		h.handlePatchAccount(w, r, userID, accountID)
 	case http.MethodDelete:
 		h.handleDeleteAccount(w, r, userID, accountID)
 	default:
@@ -149,6 +157,63 @@ func (h *AccountHandler) handleDeleteAccount(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePatchAccount updates specific fields of an account
+func (h *AccountHandler) handlePatchAccount(w http.ResponseWriter, r *http.Request, userID int64, accountID string) {
+	var req UpdateAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding patch account request: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Build update params from request
+	updateParams := account.UpdateParams{
+		Order:        req.Order,
+		HiddenByUser: req.HiddenByUser,
+	}
+
+	// Update account
+	updatedAccount, err := h.accountService.UpdateAccount(r.Context(), accountID, updateParams, userID)
+	if err != nil {
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		default:
+			log.Printf("Error updating account %s: %v", accountID, err)
+			http.Error(w, "Failed to update account", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Get account with bank data for response
+	accounts, err := h.accountService.ListAccountsWithBankByUserID(r.Context(), userID)
+	if err != nil {
+		log.Printf("Error listing accounts for user %d: %v", userID, err)
+		http.Error(w, "Failed to get updated account", http.StatusInternalServerError)
+		return
+	}
+
+	// Find the updated account with bank data
+	var found *account.AccountWithBank
+	for _, acc := range accounts {
+		if acc.ID == accountID {
+			found = acc
+			break
+		}
+	}
+	if found == nil {
+		// Fallback: create response from updated account without bank data
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updatedAccount)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toAccountResponse(found))
 }
 
 // toAccountResponse transforms an AccountWithBank to the mobile-friendly AccountResponse

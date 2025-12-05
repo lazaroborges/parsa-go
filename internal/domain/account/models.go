@@ -115,6 +115,8 @@ type UpdateParams struct {
 	Name        *string
 	AccountType *string
 	Balance     *float64
+	Order       *int  // UIOrder field
+	HiddenByUser *bool
 }
 
 // UpsertParams contains parameters for upserting an account
