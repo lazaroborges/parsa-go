@@ -29,6 +29,7 @@ type Dependencies struct {
 	// Sync services (for scheduler)
 	AccountSyncService     *openfinance.AccountSyncService
 	TransactionSyncService *openfinance.TransactionSyncService
+	BillSyncService        *openfinance.BillSyncService
 
 	// Repositories (for scheduler job provider)
 	UserRepo *postgres.UserRepository
@@ -60,10 +61,14 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize domain services
 	accountService := account.NewService(accountRepo)
 
+	// Initialize bill repository
+	billRepo := postgres.NewBillRepository(db)
+
 	// Initialize Open Finance client and sync services
 	ofClient := ofclient.NewClient()
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
 	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -92,7 +97,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		}
 	}
 
-	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService)
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
 
@@ -105,6 +110,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
+		BillSyncService:        billSyncService,
 		UserRepo:               userRepo,
 	}, nil
 }
