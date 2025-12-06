@@ -5,39 +5,26 @@ import (
 	"time"
 )
 
-// Bill status values (credit card bill states)
-var billStatuses = map[string]struct{}{
-	"OPEN":    {}, // Bill is open/current
-	"CLOSED":  {}, // Bill is closed but not yet due
-	"OVERDUE": {}, // Bill is past due date
-	"PAID":    {}, // Bill has been paid
-}
-
 // Domain errors
 var (
-	ErrBillNotFound  = errors.New("bill not found")
-	ErrForbidden     = errors.New("access forbidden")
-	ErrInvalidInput  = errors.New("invalid input")
-	ErrInvalidStatus = errors.New("invalid bill status")
+	ErrBillNotFound = errors.New("bill not found")
+	ErrForbidden    = errors.New("access forbidden")
+	ErrInvalidInput = errors.New("invalid input")
 )
 
 // Bill represents a credit card bill (fatura) domain entity
 // This corresponds to the Pierre Finance get-bills endpoint which returns
 // past due credit card bills (faturas de cartão de crédito vencidas)
 type Bill struct {
-	ID                string     `json:"id"` // Provider's bill ID
-	AccountID         string     `json:"accountId"`
-	DueDate           time.Time  `json:"dueDate"`           // Vencimento
-	CloseDate         *time.Time `json:"closeDate"`         // Fechamento
-	TotalAmount       float64    `json:"totalAmount"`       // Valor total da fatura
-	MinimumPayment    *float64   `json:"minimumPayment"`    // Pagamento mínimo
-	Status            string     `json:"status"`            // OPEN, CLOSED, OVERDUE, PAID
-	IsOverdue         bool       `json:"isOverdue"`         // Past due indicator
-	ProviderCreatedAt time.Time  `json:"providerCreatedAt,omitempty"`
-	ProviderUpdatedAt time.Time  `json:"providerUpdatedAt,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
-	IsOpenFinance     bool       `json:"isOpenFinance"`
+	ID                string    `json:"id"` // Provider's bill ID
+	AccountID         string    `json:"accountId"`
+	DueDate           time.Time `json:"dueDate"`     // Vencimento
+	TotalAmount       float64   `json:"totalAmount"` // Valor total da fatura
+	ProviderCreatedAt time.Time `json:"providerCreatedAt,omitempty"`
+	ProviderUpdatedAt time.Time `json:"providerUpdatedAt,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	IsOpenFinance     bool      `json:"isOpenFinance"`
 }
 
 // BillWithAccount represents a bill with its associated account data (for API responses)
@@ -51,14 +38,10 @@ type BillWithAccount struct {
 
 // CreateParams contains parameters for creating a new bill
 type CreateParams struct {
-	ID             string
-	AccountID      string
-	DueDate        time.Time
-	CloseDate      *time.Time
-	TotalAmount    float64
-	MinimumPayment *float64
-	Status         string
-	IsOverdue      bool
+	ID          string
+	AccountID   string
+	DueDate     time.Time
+	TotalAmount float64
 }
 
 // Validate validates the create parameters
@@ -72,12 +55,6 @@ func (p CreateParams) Validate() error {
 	if p.DueDate.IsZero() {
 		return errors.New("due date is required")
 	}
-	if p.Status == "" {
-		return errors.New("status is required")
-	}
-	if !IsValidStatus(p.Status) {
-		return ErrInvalidStatus
-	}
 	return nil
 }
 
@@ -86,11 +63,7 @@ type UpsertParams struct {
 	ID                string
 	AccountID         string
 	DueDate           time.Time
-	CloseDate         *time.Time
 	TotalAmount       float64
-	MinimumPayment    *float64
-	Status            string
-	IsOverdue         bool
 	ProviderCreatedAt *time.Time
 	ProviderUpdatedAt *time.Time
 }
@@ -106,27 +79,11 @@ func (p UpsertParams) Validate() error {
 	if p.DueDate.IsZero() {
 		return errors.New("due date is required")
 	}
-	if p.Status == "" {
-		return errors.New("status is required")
-	}
-	if !IsValidStatus(p.Status) {
-		return ErrInvalidStatus
-	}
 	return nil
 }
 
 // UpdateParams contains parameters for updating a bill
 type UpdateParams struct {
-	DueDate        *time.Time
-	CloseDate      *time.Time
-	TotalAmount    *float64
-	MinimumPayment *float64
-	Status         *string
-	IsOverdue      *bool
-}
-
-// IsValidStatus checks if the provided status is valid
-func IsValidStatus(s string) bool {
-	_, ok := billStatuses[s]
-	return ok
+	DueDate     *time.Time
+	TotalAmount *float64
 }

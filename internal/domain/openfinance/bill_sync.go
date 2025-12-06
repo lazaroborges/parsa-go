@@ -154,12 +154,6 @@ func (s *BillSyncService) processBill(
 		return fmt.Errorf("failed to parse total amount: %w", err)
 	}
 
-	// Parse minimum payment (optional)
-	minimumPayment, err := apiBill.GetMinimumPayment()
-	if err != nil {
-		log.Printf("Warning: failed to parse minimum payment for bill %s: %v", apiBill.ID, err)
-	}
-
 	// Parse due date
 	dueDate, err := apiBill.GetDueDate()
 	if err != nil {
@@ -167,12 +161,6 @@ func (s *BillSyncService) processBill(
 	}
 	if dueDate == nil {
 		return fmt.Errorf("due date is required")
-	}
-
-	// Parse close date (optional)
-	closeDate, err := apiBill.GetCloseDate()
-	if err != nil {
-		log.Printf("Warning: failed to parse close date for bill %s: %v", apiBill.ID, err)
 	}
 
 	// Parse timestamps
@@ -185,22 +173,12 @@ func (s *BillSyncService) processBill(
 		return fmt.Errorf("failed to check existing bill: %w", err)
 	}
 
-	// Determine status - from get-bills endpoint, bills are always past due
-	status := apiBill.Status
-	if status == "" {
-		status = "OVERDUE"
-	}
-
 	// Prepare upsert params
 	upsertParams := bill.UpsertParams{
 		ID:                apiBill.ID,
 		AccountID:         matchedAccount.ID,
 		DueDate:           *dueDate,
-		CloseDate:         closeDate,
 		TotalAmount:       totalAmount,
-		MinimumPayment:    minimumPayment,
-		Status:            status,
-		IsOverdue:         apiBill.IsOverdue,
 		ProviderCreatedAt: createdAt,
 		ProviderUpdatedAt: updatedAt,
 	}
