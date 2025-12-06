@@ -18,6 +18,9 @@ const (
 
 	// DefaultWorkerCount is the default number of concurrent workers for duplicate checking
 	DefaultWorkerCount = 4
+
+	// DefaultBatchSize is the default batch size for fetching transactions during full check
+	DefaultBatchSize = 500
 )
 
 // DuplicateCheckResult contains the results of a duplicate check operation
@@ -287,4 +290,106 @@ func (s *DuplicateCheckService) CheckBatchForDuplicatesConcurrent(
 		result.TransactionsChecked, result.DuplicatesFound, result.DuplicatesMarked, len(result.Errors))
 
 	return result
+}
+
+// CheckAllUserTransactions fetches and checks ALL existing transactions for a user
+// This is useful for running duplicate detection on historical data
+// Transactions are processed in batches to avoid memory issues with large datasets
+func (s *DuplicateCheckService) CheckAllUserTransactions(ctx context.Context, userID int64) (*DuplicateCheckResult, error) {
+	log.Printf("Starting full duplicate check for user %d", userID)
+
+	totalResult := &DuplicateCheckResult{
+		Errors: []string{},
+	}
+
+	offset := 0
+	batchNum := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return totalResult, ctx.Err()
+		default:
+		}
+
+		// Fetch a batch of transactions
+		transactions, err := s.repo.ListByUserID(ctx, userID, DefaultBatchSize, offset)
+		if err != nil {
+			return totalResult, err
+		}
+
+		if len(transactions) == 0 {
+			break // No more transactions
+		}
+
+		batchNum++
+		log.Printf("Processing batch %d: %d transactions (offset=%d)", batchNum, len(transactions), offset)
+
+		// Process this batch concurrently
+		batchResult := s.CheckBatchForDuplicates(ctx, transactions, userID)
+
+		// Aggregate results
+		totalResult.TransactionsChecked += batchResult.TransactionsChecked
+		totalResult.DuplicatesFound += batchResult.DuplicatesFound
+		totalResult.DuplicatesMarked += batchResult.DuplicatesMarked
+		totalResult.Errors = append(totalResult.Errors, batchResult.Errors...)
+
+		// Move to next batch
+		offset += len(transactions)
+
+		// If we got fewer than batch size, we've reached the end
+		if len(transactions) < DefaultBatchSize {
+			break
+		}
+	}
+
+	log.Printf("Full duplicate check completed for user %d: checked=%d, found=%d, marked=%d, errors=%d",
+		userID, totalResult.TransactionsChecked, totalResult.DuplicatesFound, totalResult.DuplicatesMarked, len(totalResult.Errors))
+
+	return totalResult, nil
+}
+
+// CheckAllUsersTransactions runs duplicate check for all provided user IDs concurrently
+// Returns a map of userID -> result
+func (s *DuplicateCheckService) CheckAllUsersTransactions(ctx context.Context, userIDs []int64) map[int64]*DuplicateCheckResult {
+	results := make(map[int64]*DuplicateCheckResult)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	// Use semaphore to limit concurrent user processing
+	sem := make(chan struct{}, s.workerCount)
+
+	for _, userID := range userIDs {
+		wg.Add(1)
+		go func(uid int64) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				mu.Lock()
+				results[uid] = &DuplicateCheckResult{
+					Errors: []string{ctx.Err().Error()},
+				}
+				mu.Unlock()
+				return
+			}
+
+			result, err := s.CheckAllUserTransactions(ctx, uid)
+			if err != nil {
+				result = &DuplicateCheckResult{
+					Errors: []string{err.Error()},
+				}
+			}
+
+			mu.Lock()
+			results[uid] = result
+			mu.Unlock()
+		}(userID)
+	}
+
+	wg.Wait()
+	return results
 }
