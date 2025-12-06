@@ -16,6 +16,14 @@ test:
 build:
 	go build -o bin/parsa ./cmd/api/
 
+# Build the admin CLI
+build-admin:
+	go build -o bin/admin ./cmd/admin/
+
+# Run admin command (usage: make admin ARGS="duplicate-check --all")
+admin:
+	go run ./cmd/admin/ $(ARGS)
+
 # Run migrations up
 migrate-up:
 	migrate -path migrations -database "postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)" up
@@ -36,4 +44,4 @@ db-drop:
 # Reset database (drop, create, migrate)
 db-reset: db-drop db-create migrate-up
 
-.PHONY: run build migrate-up migrate-down db-create db-drop db-reset
+.PHONY: run build build-admin admin migrate-up migrate-down db-create db-drop db-reset

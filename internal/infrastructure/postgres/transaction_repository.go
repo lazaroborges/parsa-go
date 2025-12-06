@@ -457,3 +457,42 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 
 	return affected, nil
 }
+
+// FindPotentialDuplicates finds transactions that could be duplicates based on criteria:
+// - Different ID from the source transaction
+// - Opposite type (DEBIT <-> CREDIT)
+// - Same absolute amount
+// - Transaction date within the specified time range
+// - Same user (through account join)
+// - Not manually manipulated
+func (r *TransactionRepository) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	query := `
+		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.transaction_date, t.type, t.status,
+		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
+		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes
+		FROM transactions t
+		JOIN accounts a ON t.account_id = a.id
+		WHERE t.id != $1
+		  AND t.type = $2
+		  AND ABS(t.amount) = $3
+		  AND t.transaction_date >= $4
+		  AND t.transaction_date <= $5
+		  AND a.user_id = $6
+		  AND t.manipulated = false
+	`
+
+	rows, err := r.db.QueryContext(ctx, query,
+		criteria.ExcludeID,
+		criteria.OppositeType,
+		criteria.AbsoluteAmount,
+		criteria.DateLowerBound,
+		criteria.DateUpperBound,
+		criteria.UserID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find potential duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}

@@ -56,5 +56,8 @@ openfinanceproviderapi.json
 todos.txt
 scripts/
 
-#Working SQL files
+#Working migrations 
 *.sql
+
+#Dump Directory
+dump/

@@ -1,6 +1,19 @@
 package transaction
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+// DuplicateCriteria defines the search criteria for finding potential duplicates
+type DuplicateCriteria struct {
+	ExcludeID       string    // The transaction ID to exclude from results
+	OppositeType    string    // The opposite type to search for (DEBIT -> CREDIT, CREDIT -> DEBIT)
+	AbsoluteAmount  float64   // The absolute amount to match
+	DateLowerBound  time.Time // Lower bound of transaction date range
+	DateUpperBound  time.Time // Upper bound of transaction date range
+	UserID          int64     // User ID to scope the search
+}
 
 // Repository defines the interface for transaction data access
 type Repository interface {
@@ -12,4 +25,8 @@ type Repository interface {
 	Update(ctx context.Context, id string, params UpdateTransactionParams) (*Transaction, error)
 	Delete(ctx context.Context, id string) error
 	Upsert(ctx context.Context, params UpsertTransactionParams) (*Transaction, error)
+	// FindPotentialDuplicates finds transactions that match the duplicate criteria
+	// Returns transactions with different ID, opposite type, same absolute amount,
+	// and transaction date within the specified range for the same user
+	FindPotentialDuplicates(ctx context.Context, criteria DuplicateCriteria) ([]*Transaction, error)
 }
