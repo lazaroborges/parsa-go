@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/bill"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
@@ -23,18 +24,22 @@ type TransactionSyncResult struct {
 	// Duplicate check results
 	DuplicatesFound  int
 	DuplicatesMarked int
+	// Bill payment check results
+	BillPaymentsFound  int
+	BillPaymentsMarked int
 }
 
 // TransactionSyncService handles syncing transactions from the Open Finance API
 type TransactionSyncService struct {
-	client                ofclient.ClientInterface
-	userRepo              user.Repository
-	accountService        *account.Service
-	accountRepo           account.Repository
-	transactionRepo       transaction.Repository
-	creditCardDataRepo    models.CreditCardDataRepository
-	bankRepo              models.BankRepository
-	duplicateCheckService *transaction.DuplicateCheckService
+	client                  ofclient.ClientInterface
+	userRepo                user.Repository
+	accountService          *account.Service
+	accountRepo             account.Repository
+	transactionRepo         transaction.Repository
+	creditCardDataRepo      models.CreditCardDataRepository
+	bankRepo                models.BankRepository
+	duplicateCheckService   *transaction.DuplicateCheckService
+	billPaymentCheckService *transaction.BillPaymentCheckService
 }
 
 // NewTransactionSyncService creates a new transaction sync service
@@ -46,16 +51,18 @@ func NewTransactionSyncService(
 	transactionRepo transaction.Repository,
 	creditCardDataRepo models.CreditCardDataRepository,
 	bankRepo models.BankRepository,
+	billRepo bill.Repository,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
-		client:                client,
-		userRepo:              userRepo,
-		accountService:        accountService,
-		accountRepo:           accountRepo,
-		transactionRepo:       transactionRepo,
-		creditCardDataRepo:    creditCardDataRepo,
-		bankRepo:              bankRepo,
-		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
+		client:                  client,
+		userRepo:                userRepo,
+		accountService:          accountService,
+		accountRepo:             accountRepo,
+		transactionRepo:         transactionRepo,
+		creditCardDataRepo:      creditCardDataRepo,
+		bankRepo:                bankRepo,
+		duplicateCheckService:   transaction.NewDuplicateCheckService(transactionRepo),
+		billPaymentCheckService: transaction.NewBillPaymentCheckService(transactionRepo, billRepo),
 	}
 }
 
@@ -127,6 +134,18 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 
 		log.Printf("Duplicate check for user %d: found=%d, marked=%d",
 			userID, result.DuplicatesFound, result.DuplicatesMarked)
+
+		// Run bill payment check on newly created transactions
+		// This runs after duplicate check - transactions marked as not considered by duplicate check
+		// can still be checked for bill payment matches
+		log.Printf("Running bill payment check on %d new transactions for user %d", len(createdTransactions), userID)
+		billResult := s.billPaymentCheckService.CheckBatchForBillPayments(ctx, createdTransactions)
+		result.BillPaymentsFound = billResult.BillPaymentsFound
+		result.BillPaymentsMarked = billResult.BillPaymentsMarked
+		result.Errors = append(result.Errors, billResult.Errors...)
+
+		log.Printf("Bill payment check for user %d: found=%d, marked=%d",
+			userID, result.BillPaymentsFound, result.BillPaymentsMarked)
 	}
 
 	return result, nil

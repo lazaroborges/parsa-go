@@ -252,3 +252,38 @@ func (r *BillRepository) Upsert(ctx context.Context, params bill.UpsertParams) (
 
 	return &b, nil
 }
+
+func (r *BillRepository) FindMatchingBill(ctx context.Context, criteria bill.BillMatchCriteria) (*bill.Bill, error) {
+	query := `
+		SELECT id, account_id, due_date, total_amount,
+		       provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
+		FROM bills
+		WHERE account_id = $1
+		  AND total_amount = $2
+		  AND due_date >= $3
+		  AND due_date <= $4
+		LIMIT 1
+	`
+
+	var b bill.Bill
+	var providerCreatedAt, providerUpdatedAt sql.NullTime
+
+	err := r.db.QueryRowContext(
+		ctx, query,
+		criteria.AccountID, criteria.Amount, criteria.DateLowerBound, criteria.DateUpperBound,
+	).Scan(
+		&b.ID, &b.AccountID, &b.DueDate, &b.TotalAmount,
+		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No matching bill found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find matching bill: %w", err)
+	}
+
+	applyNullableBillFields(&b, providerCreatedAt, providerUpdatedAt)
+
+	return &b, nil
+}
