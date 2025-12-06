@@ -55,3 +55,6 @@ accounts.json
 openfinanceproviderapi.json
 todos.txt
 scripts/
+
+#Working SQL files
+*.sql

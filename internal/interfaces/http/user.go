@@ -20,6 +20,7 @@ type UserHandler struct {
 	ofClient               ofclient.ClientInterface
 	accountSyncService     *openfinance.AccountSyncService
 	transactionSyncService *openfinance.TransactionSyncService
+	billSyncService        *openfinance.BillSyncService
 }
 
 func NewUserHandler(
@@ -28,6 +29,7 @@ func NewUserHandler(
 	ofClient ofclient.ClientInterface,
 	accountSyncService *openfinance.AccountSyncService,
 	transactionSyncService *openfinance.TransactionSyncService,
+	billSyncService *openfinance.BillSyncService,
 ) *UserHandler {
 	return &UserHandler{
 		userRepo:               userRepo,
@@ -35,6 +37,7 @@ func NewUserHandler(
 		ofClient:               ofClient,
 		accountSyncService:     accountSyncService,
 		transactionSyncService: transactionSyncService,
+		billSyncService:        billSyncService,
 	}
 }
 
@@ -167,6 +170,15 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 				return
 			}
 			log.Printf("Transaction sync completed for user %d: created=%d, updated=%d", userID, txResult.Created, txResult.Updated)
+
+			// After transaction sync, sync bills
+			log.Printf("Starting bill sync for user %d after transaction sync", userID)
+			billResult, err := h.billSyncService.SyncUserBills(ctx, userID)
+			if err != nil {
+				log.Printf("Error syncing bills for user %d: %v", userID, err)
+				return
+			}
+			log.Printf("Bill sync completed for user %d: created=%d, updated=%d", userID, billResult.Created, billResult.Updated)
 		}()
 
 		return
