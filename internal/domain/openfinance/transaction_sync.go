@@ -20,17 +20,21 @@ type TransactionSyncResult struct {
 	Updated           int
 	Skipped           int // Transactions that couldn't be matched to an account
 	Errors            []string
+	// Duplicate check results
+	DuplicatesFound  int
+	DuplicatesMarked int
 }
 
 // TransactionSyncService handles syncing transactions from the Open Finance API
 type TransactionSyncService struct {
-	client             ofclient.ClientInterface
-	userRepo           user.Repository
-	accountService     *account.Service
-	accountRepo        account.Repository
-	transactionRepo    transaction.Repository
-	creditCardDataRepo models.CreditCardDataRepository
-	bankRepo           models.BankRepository
+	client                ofclient.ClientInterface
+	userRepo              user.Repository
+	accountService        *account.Service
+	accountRepo           account.Repository
+	transactionRepo       transaction.Repository
+	creditCardDataRepo    models.CreditCardDataRepository
+	bankRepo              models.BankRepository
+	duplicateCheckService *transaction.DuplicateCheckService
 }
 
 // NewTransactionSyncService creates a new transaction sync service
@@ -44,13 +48,14 @@ func NewTransactionSyncService(
 	bankRepo models.BankRepository,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
-		client:             client,
-		userRepo:           userRepo,
-		accountService:     accountService,
-		accountRepo:        accountRepo,
-		transactionRepo:    transactionRepo,
-		creditCardDataRepo: creditCardDataRepo,
-		bankRepo:           bankRepo,
+		client:                client,
+		userRepo:              userRepo,
+		accountService:        accountService,
+		accountRepo:           accountRepo,
+		transactionRepo:       transactionRepo,
+		creditCardDataRepo:    creditCardDataRepo,
+		bankRepo:              bankRepo,
+		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 	}
 }
 
@@ -92,29 +97,50 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		accountCache[key] = accounts[i]
 	}
 
+	// Collect newly created transactions for duplicate checking
+	createdTransactions := make([]*transaction.Transaction, 0, len(txResp.Data))
+
 	// Process each transaction
 	for _, apiTx := range txResp.Data {
-		if err := s.processTransaction(ctx, userID, &apiTx, accountCache, result); err != nil {
+		txn, wasCreated, err := s.processTransaction(ctx, userID, &apiTx, accountCache, result)
+		if err != nil {
 			errMsg := fmt.Sprintf("failed to process transaction %s: %v", apiTx.ID, err)
 			result.Errors = append(result.Errors, errMsg)
 			log.Printf("Error: %s", errMsg)
+			continue
+		}
+		if wasCreated && txn != nil {
+			createdTransactions = append(createdTransactions, txn)
 		}
 	}
 
 	log.Printf("Transaction sync completed for user %d: found=%d, created=%d, updated=%d, skipped=%d, errors=%d",
 		userID, result.TransactionsFound, result.Created, result.Updated, result.Skipped, len(result.Errors))
 
+	// Run duplicate check on newly created transactions
+	if len(createdTransactions) > 0 {
+		log.Printf("Running duplicate check on %d new transactions for user %d", len(createdTransactions), userID)
+		dupResult := s.duplicateCheckService.CheckBatchForDuplicates(ctx, createdTransactions, userID)
+		result.DuplicatesFound = dupResult.DuplicatesFound
+		result.DuplicatesMarked = dupResult.DuplicatesMarked
+		result.Errors = append(result.Errors, dupResult.Errors...)
+
+		log.Printf("Duplicate check for user %d: found=%d, marked=%d",
+			userID, result.DuplicatesFound, result.DuplicatesMarked)
+	}
+
 	return result, nil
 }
 
 // processTransaction processes a single transaction from the API
+// Returns the transaction (if created/updated), whether it was newly created, and any error
 func (s *TransactionSyncService) processTransaction(
 	ctx context.Context,
 	userID int64,
 	apiTx *ofclient.Transaction,
 	accountCache map[string]*account.Account,
 	result *TransactionSyncResult,
-) error {
+) (*transaction.Transaction, bool, error) {
 	// Match transaction to account using: account_name -> name, account_type -> account_type, account_subtype -> subtype
 	matchKey := fmt.Sprintf("%s|%s|%s", apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 	account, found := accountCache[matchKey]
@@ -124,13 +150,13 @@ func (s *TransactionSyncService) processTransaction(
 		var err error
 		account, err = s.accountService.FindAccountByMatch(ctx, userID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 		if err != nil {
-			return fmt.Errorf("failed to find account: %w", err)
+			return nil, false, fmt.Errorf("failed to find account: %w", err)
 		}
 		if account == nil {
 			log.Printf("Skipping transaction %s: no matching account found for name=%s, type=%s, subtype=%s",
 				apiTx.ID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 			result.Skipped++
-			return nil
+			return nil, false, nil
 		}
 		// Update cache
 		accountCache[matchKey] = account
@@ -156,22 +182,22 @@ func (s *TransactionSyncService) processTransaction(
 	// Parse amount
 	amount, err := apiTx.GetAmount()
 	if err != nil {
-		return fmt.Errorf("failed to parse amount: %w", err)
+		return nil, false, fmt.Errorf("failed to parse amount: %w", err)
 	}
 
 	// Parse transaction date
 	txDate, err := apiTx.GetDate()
 	if err != nil {
-		return fmt.Errorf("failed to parse date: %w", err)
+		return nil, false, fmt.Errorf("failed to parse date: %w", err)
 	}
 	if txDate == nil {
-		return fmt.Errorf("transaction date is required")
+		return nil, false, fmt.Errorf("transaction date is required")
 	}
 
 	// Check if transaction already exists
 	existingTx, err := s.transactionRepo.GetByID(ctx, apiTx.ID)
 	if err != nil {
-		return fmt.Errorf("failed to check existing transaction: %w", err)
+		return nil, false, fmt.Errorf("failed to check existing transaction: %w", err)
 	}
 
 	// Translate category from OpenFinance format to ParsaName
@@ -190,12 +216,13 @@ func (s *TransactionSyncService) processTransaction(
 	}
 
 	// Upsert transaction
-	_, err = s.transactionRepo.Upsert(ctx, upsertParams)
+	txn, err := s.transactionRepo.Upsert(ctx, upsertParams)
 	if err != nil {
-		return fmt.Errorf("failed to upsert transaction: %w", err)
+		return nil, false, fmt.Errorf("failed to upsert transaction: %w", err)
 	}
 
-	if existingTx == nil {
+	wasCreated := existingTx == nil
+	if wasCreated {
 		result.Created++
 	} else {
 		result.Updated++
@@ -204,11 +231,11 @@ func (s *TransactionSyncService) processTransaction(
 	// Process credit card data if present
 	if apiTx.CreditCardData != nil {
 		if err := s.processCreditCardData(ctx, apiTx.ID, apiTx.CreditCardData); err != nil {
-			return fmt.Errorf("failed to process credit card data: %w", err)
+			return txn, wasCreated, fmt.Errorf("failed to process credit card data: %w", err)
 		}
 	}
 
-	return nil
+	return txn, wasCreated, nil
 }
 
 // processCreditCardData processes credit card installment data for a transaction
