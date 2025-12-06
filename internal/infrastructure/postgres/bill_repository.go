@@ -18,26 +18,23 @@ func NewBillRepository(db *DB) *BillRepository {
 
 func (r *BillRepository) Create(ctx context.Context, params bill.CreateParams) (*bill.Bill, error) {
 	query := `
-		INSERT INTO bills (id, account_id, amount, due_date, status, description, biller_name,
-		                   category, barcode, digitable_line, payment_date, related_transaction_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING id, account_id, amount, due_date, status, description, biller_name,
-		          category, barcode, digitable_line, payment_date, related_transaction_id,
+		INSERT INTO bills (id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue,
 		          provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 	`
 
 	var b bill.Bill
-	var providerCreatedAt, providerUpdatedAt, paymentDate sql.NullTime
-	var category, barcode, digitableLine, relatedTxID sql.NullString
+	var providerCreatedAt, providerUpdatedAt, closeDate sql.NullTime
+	var minimumPayment sql.NullFloat64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.ID, params.AccountID, params.Amount, params.DueDate, params.Status,
-		params.Description, params.BillerName, params.Category, params.Barcode,
-		params.DigitableLine, params.PaymentDate, params.RelatedTransactionID,
+		params.ID, params.AccountID, params.DueDate, params.CloseDate,
+		params.TotalAmount, params.MinimumPayment, params.Status, params.IsOverdue,
 	).Scan(
-		&b.ID, &b.AccountID, &b.Amount, &b.DueDate, &b.Status, &b.Description, &b.BillerName,
-		&category, &barcode, &digitableLine, &paymentDate, &relatedTxID,
+		&b.ID, &b.AccountID, &b.DueDate, &closeDate, &b.TotalAmount, &minimumPayment,
+		&b.Status, &b.IsOverdue,
 		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
 	)
 
@@ -45,28 +42,26 @@ func (r *BillRepository) Create(ctx context.Context, params bill.CreateParams) (
 		return nil, fmt.Errorf("failed to create bill: %w", err)
 	}
 
-	applyNullableBillFields(&b, category, barcode, digitableLine, paymentDate, relatedTxID,
-		providerCreatedAt, providerUpdatedAt)
+	applyNullableBillFields(&b, closeDate, minimumPayment, providerCreatedAt, providerUpdatedAt)
 
 	return &b, nil
 }
 
 func (r *BillRepository) GetByID(ctx context.Context, id string) (*bill.Bill, error) {
 	query := `
-		SELECT id, account_id, amount, due_date, status, description, biller_name,
-		       category, barcode, digitable_line, payment_date, related_transaction_id,
+		SELECT id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue,
 		       provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 		FROM bills
 		WHERE id = $1
 	`
 
 	var b bill.Bill
-	var providerCreatedAt, providerUpdatedAt, paymentDate sql.NullTime
-	var category, barcode, digitableLine, relatedTxID sql.NullString
+	var providerCreatedAt, providerUpdatedAt, closeDate sql.NullTime
+	var minimumPayment sql.NullFloat64
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&b.ID, &b.AccountID, &b.Amount, &b.DueDate, &b.Status, &b.Description, &b.BillerName,
-		&category, &barcode, &digitableLine, &paymentDate, &relatedTxID,
+		&b.ID, &b.AccountID, &b.DueDate, &closeDate, &b.TotalAmount, &minimumPayment,
+		&b.Status, &b.IsOverdue,
 		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
 	)
 
@@ -77,16 +72,14 @@ func (r *BillRepository) GetByID(ctx context.Context, id string) (*bill.Bill, er
 		return nil, fmt.Errorf("failed to get bill: %w", err)
 	}
 
-	applyNullableBillFields(&b, category, barcode, digitableLine, paymentDate, relatedTxID,
-		providerCreatedAt, providerUpdatedAt)
+	applyNullableBillFields(&b, closeDate, minimumPayment, providerCreatedAt, providerUpdatedAt)
 
 	return &b, nil
 }
 
 func (r *BillRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*bill.Bill, error) {
 	query := `
-		SELECT id, account_id, amount, due_date, status, description, biller_name,
-		       category, barcode, digitable_line, payment_date, related_transaction_id,
+		SELECT id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue,
 		       provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 		FROM bills
 		WHERE account_id = $1
@@ -105,9 +98,9 @@ func (r *BillRepository) ListByAccountID(ctx context.Context, accountID string, 
 
 func (r *BillRepository) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*bill.Bill, error) {
 	query := `
-		SELECT b.id, b.account_id, b.amount, b.due_date, b.status, b.description, b.biller_name,
-		       b.category, b.barcode, b.digitable_line, b.payment_date, b.related_transaction_id,
-		       b.provider_created_at, b.provider_updated_at, b.created_at, b.updated_at, b.is_open_finance
+		SELECT b.id, b.account_id, b.due_date, b.close_date, b.total_amount, b.minimum_payment,
+		       b.status, b.is_overdue, b.provider_created_at, b.provider_updated_at,
+		       b.created_at, b.updated_at, b.is_open_finance
 		FROM bills b
 		JOIN accounts a ON b.account_id = a.id
 		WHERE a.user_id = $1
@@ -145,20 +138,19 @@ func scanBills(rows *sql.Rows) ([]*bill.Bill, error) {
 	var bills []*bill.Bill
 	for rows.Next() {
 		var b bill.Bill
-		var providerCreatedAt, providerUpdatedAt, paymentDate sql.NullTime
-		var category, barcode, digitableLine, relatedTxID sql.NullString
+		var providerCreatedAt, providerUpdatedAt, closeDate sql.NullTime
+		var minimumPayment sql.NullFloat64
 
 		err := rows.Scan(
-			&b.ID, &b.AccountID, &b.Amount, &b.DueDate, &b.Status, &b.Description, &b.BillerName,
-			&category, &barcode, &digitableLine, &paymentDate, &relatedTxID,
+			&b.ID, &b.AccountID, &b.DueDate, &closeDate, &b.TotalAmount, &minimumPayment,
+			&b.Status, &b.IsOverdue,
 			&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan bill: %w", err)
 		}
 
-		applyNullableBillFields(&b, category, barcode, digitableLine, paymentDate, relatedTxID,
-			providerCreatedAt, providerUpdatedAt)
+		applyNullableBillFields(&b, closeDate, minimumPayment, providerCreatedAt, providerUpdatedAt)
 
 		bills = append(bills, &b)
 	}
@@ -170,22 +162,13 @@ func scanBills(rows *sql.Rows) ([]*bill.Bill, error) {
 	return bills, nil
 }
 
-func applyNullableBillFields(b *bill.Bill, category, barcode, digitableLine, relatedTxID sql.NullString,
-	paymentDate, providerCreatedAt, providerUpdatedAt sql.NullTime) {
-	if category.Valid {
-		b.Category = &category.String
+func applyNullableBillFields(b *bill.Bill, closeDate sql.NullTime, minimumPayment sql.NullFloat64,
+	providerCreatedAt, providerUpdatedAt sql.NullTime) {
+	if closeDate.Valid {
+		b.CloseDate = &closeDate.Time
 	}
-	if barcode.Valid {
-		b.Barcode = &barcode.String
-	}
-	if digitableLine.Valid {
-		b.DigitableLine = &digitableLine.String
-	}
-	if relatedTxID.Valid {
-		b.RelatedTransactionID = &relatedTxID.String
-	}
-	if paymentDate.Valid {
-		b.PaymentDate = &paymentDate.Time
+	if minimumPayment.Valid {
+		b.MinimumPayment = &minimumPayment.Float64
 	}
 	if providerCreatedAt.Valid {
 		b.ProviderCreatedAt = providerCreatedAt.Time
@@ -198,32 +181,29 @@ func applyNullableBillFields(b *bill.Bill, category, barcode, digitableLine, rel
 func (r *BillRepository) Update(ctx context.Context, id string, params bill.UpdateParams) (*bill.Bill, error) {
 	query := `
 		UPDATE bills
-		SET amount = COALESCE($1, amount),
-		    due_date = COALESCE($2, due_date),
-		    status = COALESCE($3, status),
-		    description = COALESCE($4, description),
-		    biller_name = COALESCE($5, biller_name),
-		    category = COALESCE($6, category),
-		    payment_date = COALESCE($7, payment_date),
-		    related_transaction_id = COALESCE($8, related_transaction_id),
+		SET due_date = COALESCE($1, due_date),
+		    close_date = COALESCE($2, close_date),
+		    total_amount = COALESCE($3, total_amount),
+		    minimum_payment = COALESCE($4, minimum_payment),
+		    status = COALESCE($5, status),
+		    is_overdue = COALESCE($6, is_overdue),
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $9
-		RETURNING id, account_id, amount, due_date, status, description, biller_name,
-		          category, barcode, digitable_line, payment_date, related_transaction_id,
+		WHERE id = $7
+		RETURNING id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue,
 		          provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 	`
 
 	var b bill.Bill
-	var providerCreatedAt, providerUpdatedAt, paymentDate sql.NullTime
-	var category, barcode, digitableLine, relatedTxID sql.NullString
+	var providerCreatedAt, providerUpdatedAt, closeDate sql.NullTime
+	var minimumPayment sql.NullFloat64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.Amount, params.DueDate, params.Status, params.Description, params.BillerName,
-		params.Category, params.PaymentDate, params.RelatedTransactionID, id,
+		params.DueDate, params.CloseDate, params.TotalAmount, params.MinimumPayment,
+		params.Status, params.IsOverdue, id,
 	).Scan(
-		&b.ID, &b.AccountID, &b.Amount, &b.DueDate, &b.Status, &b.Description, &b.BillerName,
-		&category, &barcode, &digitableLine, &paymentDate, &relatedTxID,
+		&b.ID, &b.AccountID, &b.DueDate, &closeDate, &b.TotalAmount, &minimumPayment,
+		&b.Status, &b.IsOverdue,
 		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
 	)
 
@@ -234,8 +214,7 @@ func (r *BillRepository) Update(ctx context.Context, id string, params bill.Upda
 		return nil, fmt.Errorf("failed to update bill: %w", err)
 	}
 
-	applyNullableBillFields(&b, category, barcode, digitableLine, paymentDate, relatedTxID,
-		providerCreatedAt, providerUpdatedAt)
+	applyNullableBillFields(&b, closeDate, minimumPayment, providerCreatedAt, providerUpdatedAt)
 
 	return &b, nil
 }
@@ -262,42 +241,35 @@ func (r *BillRepository) Delete(ctx context.Context, id string) error {
 
 func (r *BillRepository) Upsert(ctx context.Context, params bill.UpsertParams) (*bill.Bill, error) {
 	query := `
-		INSERT INTO bills (id, account_id, amount, due_date, status, description, biller_name,
-		                   category, barcode, digitable_line, payment_date, related_transaction_id,
-		                   provider_created_at, provider_updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO bills (id, account_id, due_date, close_date, total_amount, minimum_payment,
+		                   status, is_overdue, provider_created_at, provider_updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
-		    amount = EXCLUDED.amount,
 		    due_date = EXCLUDED.due_date,
+		    close_date = EXCLUDED.close_date,
+		    total_amount = EXCLUDED.total_amount,
+		    minimum_payment = EXCLUDED.minimum_payment,
 		    status = EXCLUDED.status,
-		    description = EXCLUDED.description,
-		    biller_name = EXCLUDED.biller_name,
-		    category = EXCLUDED.category,
-		    barcode = EXCLUDED.barcode,
-		    digitable_line = EXCLUDED.digitable_line,
-		    payment_date = EXCLUDED.payment_date,
-		    related_transaction_id = EXCLUDED.related_transaction_id,
+		    is_overdue = EXCLUDED.is_overdue,
 		    provider_created_at = EXCLUDED.provider_created_at,
 		    provider_updated_at = EXCLUDED.provider_updated_at,
 		    updated_at = CURRENT_TIMESTAMP
-		RETURNING id, account_id, amount, due_date, status, description, biller_name,
-		          category, barcode, digitable_line, payment_date, related_transaction_id,
+		RETURNING id, account_id, due_date, close_date, total_amount, minimum_payment, status, is_overdue,
 		          provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 	`
 
 	var b bill.Bill
-	var providerCreatedAt, providerUpdatedAt, paymentDate sql.NullTime
-	var category, barcode, digitableLine, relatedTxID sql.NullString
+	var providerCreatedAt, providerUpdatedAt, closeDate sql.NullTime
+	var minimumPayment sql.NullFloat64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.ID, params.AccountID, params.Amount, params.DueDate, params.Status,
-		params.Description, params.BillerName, params.Category, params.Barcode,
-		params.DigitableLine, params.PaymentDate, params.RelatedTransactionID,
+		params.ID, params.AccountID, params.DueDate, params.CloseDate, params.TotalAmount,
+		params.MinimumPayment, params.Status, params.IsOverdue,
 		params.ProviderCreatedAt, params.ProviderUpdatedAt,
 	).Scan(
-		&b.ID, &b.AccountID, &b.Amount, &b.DueDate, &b.Status, &b.Description, &b.BillerName,
-		&category, &barcode, &digitableLine, &paymentDate, &relatedTxID,
+		&b.ID, &b.AccountID, &b.DueDate, &closeDate, &b.TotalAmount, &minimumPayment,
+		&b.Status, &b.IsOverdue,
 		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
 	)
 
@@ -305,8 +277,7 @@ func (r *BillRepository) Upsert(ctx context.Context, params bill.UpsertParams) (
 		return nil, fmt.Errorf("failed to upsert bill: %w", err)
 	}
 
-	applyNullableBillFields(&b, category, barcode, digitableLine, paymentDate, relatedTxID,
-		providerCreatedAt, providerUpdatedAt)
+	applyNullableBillFields(&b, closeDate, minimumPayment, providerCreatedAt, providerUpdatedAt)
 
 	return &b, nil
 }

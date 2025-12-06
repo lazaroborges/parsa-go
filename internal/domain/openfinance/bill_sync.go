@@ -21,7 +21,7 @@ type BillSyncResult struct {
 	Errors     []string
 }
 
-// BillSyncService handles syncing bills from the Open Finance API
+// BillSyncService handles syncing past due credit card bills from the Open Finance API
 type BillSyncService struct {
 	client         ofclient.ClientInterface
 	userRepo       user.Repository
@@ -47,7 +47,7 @@ func NewBillSyncService(
 	}
 }
 
-// SyncUserBills syncs all bills for a specific user
+// SyncUserBills syncs all past due credit card bills for a specific user
 func (s *BillSyncService) SyncUserBills(ctx context.Context, userID int64) (*BillSyncResult, error) {
 	result := &BillSyncResult{
 		UserID: userID,
@@ -64,14 +64,14 @@ func (s *BillSyncService) SyncUserBills(ctx context.Context, userID int64) (*Bil
 		return nil, fmt.Errorf("user has no provider API key configured")
 	}
 
-	// Fetch bills from provider
+	// Fetch past due bills from provider
 	billResp, err := s.client.GetBills(ctx, *user.ProviderKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch bills from provider: %w", err)
 	}
 
 	result.BillsFound = len(billResp.Data)
-	log.Printf("Fetched %d bills for user %d", result.BillsFound, userID)
+	log.Printf("Fetched %d past due bills for user %d", result.BillsFound, userID)
 
 	// Build a cache of accounts for matching
 	// Key: "name|account_type|subtype" -> account
@@ -106,7 +106,7 @@ func (s *BillSyncService) SyncUserBills(ctx context.Context, userID int64) (*Bil
 	return result, nil
 }
 
-// processBill processes a single bill from the API
+// processBill processes a single past due credit card bill from the API
 func (s *BillSyncService) processBill(
 	ctx context.Context,
 	userID int64,
@@ -148,10 +148,16 @@ func (s *BillSyncService) processBill(
 		return nil
 	}
 
-	// Parse amount
-	amount, err := apiBill.GetAmount()
+	// Parse total amount
+	totalAmount, err := apiBill.GetTotalAmount()
 	if err != nil {
-		return fmt.Errorf("failed to parse amount: %w", err)
+		return fmt.Errorf("failed to parse total amount: %w", err)
+	}
+
+	// Parse minimum payment (optional)
+	minimumPayment, err := apiBill.GetMinimumPayment()
+	if err != nil {
+		log.Printf("Warning: failed to parse minimum payment for bill %s: %v", apiBill.ID, err)
 	}
 
 	// Parse due date
@@ -163,15 +169,15 @@ func (s *BillSyncService) processBill(
 		return fmt.Errorf("due date is required")
 	}
 
-	// Parse optional payment date
-	paymentDate, err := apiBill.GetPaymentDate()
+	// Parse close date (optional)
+	closeDate, err := apiBill.GetCloseDate()
 	if err != nil {
-		log.Printf("Warning: failed to parse payment date for bill %s: %v", apiBill.ID, err)
+		log.Printf("Warning: failed to parse close date for bill %s: %v", apiBill.ID, err)
 	}
 
 	// Parse timestamps
-	createdAt, _ := apiBill.GetCreatedAtBill()
-	updatedAt, _ := apiBill.GetUpdatedAtBill()
+	createdAt, _ := apiBill.GetCreatedAt()
+	updatedAt, _ := apiBill.GetUpdatedAt()
 
 	// Check if bill already exists
 	existingBill, err := s.billRepo.GetByID(ctx, apiBill.ID)
@@ -179,22 +185,24 @@ func (s *BillSyncService) processBill(
 		return fmt.Errorf("failed to check existing bill: %w", err)
 	}
 
+	// Determine status - from get-bills endpoint, bills are always past due
+	status := apiBill.Status
+	if status == "" {
+		status = "OVERDUE"
+	}
+
 	// Prepare upsert params
 	upsertParams := bill.UpsertParams{
-		ID:                   apiBill.ID,
-		AccountID:            matchedAccount.ID,
-		Amount:               amount,
-		DueDate:              *dueDate,
-		Status:               apiBill.Status,
-		Description:          apiBill.Description,
-		BillerName:           apiBill.BillerName,
-		Category:             apiBill.Category,
-		Barcode:              apiBill.Barcode,
-		DigitableLine:        apiBill.DigitableLine,
-		PaymentDate:          paymentDate,
-		RelatedTransactionID: apiBill.RelatedTransactionID,
-		ProviderCreatedAt:    createdAt,
-		ProviderUpdatedAt:    updatedAt,
+		ID:                apiBill.ID,
+		AccountID:         matchedAccount.ID,
+		DueDate:           *dueDate,
+		CloseDate:         closeDate,
+		TotalAmount:       totalAmount,
+		MinimumPayment:    minimumPayment,
+		Status:            status,
+		IsOverdue:         apiBill.IsOverdue,
+		ProviderCreatedAt: createdAt,
+		ProviderUpdatedAt: updatedAt,
 	}
 
 	// Upsert bill
@@ -212,7 +220,7 @@ func (s *BillSyncService) processBill(
 	return nil
 }
 
-// SyncAllUsersBills syncs bills for all users with provider keys
+// SyncAllUsersBills syncs past due bills for all users with provider keys
 func (s *BillSyncService) SyncAllUsersBills(ctx context.Context) ([]*BillSyncResult, error) {
 	users, err := s.userRepo.ListUsersWithProviderKey(ctx)
 	if err != nil {

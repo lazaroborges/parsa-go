@@ -5,41 +5,39 @@ import (
 	"time"
 )
 
-// Bill status values
+// Bill status values (credit card bill states)
 var billStatuses = map[string]struct{}{
-	"OPEN":      {},
-	"PAID":      {},
-	"OVERDUE":   {},
-	"CANCELLED": {},
+	"OPEN":    {}, // Bill is open/current
+	"CLOSED":  {}, // Bill is closed but not yet due
+	"OVERDUE": {}, // Bill is past due date
+	"PAID":    {}, // Bill has been paid
 }
 
 // Domain errors
 var (
-	ErrBillNotFound     = errors.New("bill not found")
-	ErrForbidden        = errors.New("access forbidden")
-	ErrInvalidInput     = errors.New("invalid input")
-	ErrInvalidStatus    = errors.New("invalid bill status")
+	ErrBillNotFound  = errors.New("bill not found")
+	ErrForbidden     = errors.New("access forbidden")
+	ErrInvalidInput  = errors.New("invalid input")
+	ErrInvalidStatus = errors.New("invalid bill status")
 )
 
-// Bill represents a bill/boleto domain entity
+// Bill represents a credit card bill (fatura) domain entity
+// This corresponds to the Pierre Finance get-bills endpoint which returns
+// past due credit card bills (faturas de cartão de crédito vencidas)
 type Bill struct {
-	ID                   string     `json:"id"` // Provider's bill ID (UUID string)
-	AccountID            string     `json:"accountId"`
-	Amount               float64    `json:"amount"`
-	DueDate              time.Time  `json:"dueDate"`
-	Status               string     `json:"status"` // OPEN, PAID, OVERDUE, CANCELLED
-	Description          string     `json:"description"`
-	BillerName           string     `json:"billerName"`
-	Category             *string    `json:"category,omitempty"`
-	Barcode              *string    `json:"barcode,omitempty"`       // Brazilian boleto barcode
-	DigitableLine        *string    `json:"digitableLine,omitempty"` // Boleto digitable line
-	PaymentDate          *time.Time `json:"paymentDate,omitempty"`
-	RelatedTransactionID *string    `json:"relatedTransactionId,omitempty"`
-	ProviderCreatedAt    time.Time  `json:"providerCreatedAt,omitempty"`
-	ProviderUpdatedAt    time.Time  `json:"providerUpdatedAt,omitempty"`
-	CreatedAt            time.Time  `json:"createdAt"`
-	UpdatedAt            time.Time  `json:"updatedAt"`
-	IsOpenFinance        bool       `json:"isOpenFinance"`
+	ID                string     `json:"id"` // Provider's bill ID
+	AccountID         string     `json:"accountId"`
+	DueDate           time.Time  `json:"dueDate"`           // Vencimento
+	CloseDate         *time.Time `json:"closeDate"`         // Fechamento
+	TotalAmount       float64    `json:"totalAmount"`       // Valor total da fatura
+	MinimumPayment    *float64   `json:"minimumPayment"`    // Pagamento mínimo
+	Status            string     `json:"status"`            // OPEN, CLOSED, OVERDUE, PAID
+	IsOverdue         bool       `json:"isOverdue"`         // Past due indicator
+	ProviderCreatedAt time.Time  `json:"providerCreatedAt,omitempty"`
+	ProviderUpdatedAt time.Time  `json:"providerUpdatedAt,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+	IsOpenFinance     bool       `json:"isOpenFinance"`
 }
 
 // BillWithAccount represents a bill with its associated account data (for API responses)
@@ -48,22 +46,19 @@ type BillWithAccount struct {
 	AccountName    string `json:"accountName"`
 	AccountType    string `json:"accountType"`
 	AccountSubtype string `json:"accountSubtype"`
+	BankName       string `json:"bankName"`
 }
 
 // CreateParams contains parameters for creating a new bill
 type CreateParams struct {
-	ID                   string
-	AccountID            string
-	Amount               float64
-	DueDate              time.Time
-	Status               string
-	Description          string
-	BillerName           string
-	Category             *string
-	Barcode              *string
-	DigitableLine        *string
-	PaymentDate          *time.Time
-	RelatedTransactionID *string
+	ID             string
+	AccountID      string
+	DueDate        time.Time
+	CloseDate      *time.Time
+	TotalAmount    float64
+	MinimumPayment *float64
+	Status         string
+	IsOverdue      bool
 }
 
 // Validate validates the create parameters
@@ -88,20 +83,16 @@ func (p CreateParams) Validate() error {
 
 // UpsertParams contains parameters for upserting a bill
 type UpsertParams struct {
-	ID                   string
-	AccountID            string
-	Amount               float64
-	DueDate              time.Time
-	Status               string
-	Description          string
-	BillerName           string
-	Category             *string
-	Barcode              *string
-	DigitableLine        *string
-	PaymentDate          *time.Time
-	RelatedTransactionID *string
-	ProviderCreatedAt    *time.Time
-	ProviderUpdatedAt    *time.Time
+	ID                string
+	AccountID         string
+	DueDate           time.Time
+	CloseDate         *time.Time
+	TotalAmount       float64
+	MinimumPayment    *float64
+	Status            string
+	IsOverdue         bool
+	ProviderCreatedAt *time.Time
+	ProviderUpdatedAt *time.Time
 }
 
 // Validate validates the upsert parameters
@@ -126,14 +117,12 @@ func (p UpsertParams) Validate() error {
 
 // UpdateParams contains parameters for updating a bill
 type UpdateParams struct {
-	Amount               *float64
-	DueDate              *time.Time
-	Status               *string
-	Description          *string
-	BillerName           *string
-	Category             *string
-	PaymentDate          *time.Time
-	RelatedTransactionID *string
+	DueDate        *time.Time
+	CloseDate      *time.Time
+	TotalAmount    *float64
+	MinimumPayment *float64
+	Status         *string
+	IsOverdue      *bool
 }
 
 // IsValidStatus checks if the provided status is valid

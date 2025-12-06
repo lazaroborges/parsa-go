@@ -216,49 +216,64 @@ func (c *TransactionCreditData) GetTotalInstallments() (int, error) {
 	return num, nil
 }
 
-// BillResponse represents the API response for bill data
+// BillResponse represents the API response for past due credit card bills
+// Endpoint: GET /tools/api/get-bills
 type BillResponse struct {
-	Success   bool   `json:"success"`
-	Data      []Bill `json:"data"`
-	Count     int    `json:"count"`
-	Timestamp string `json:"timestamp"`
+	Success   bool        `json:"success"`
+	Data      []Bill      `json:"data"`
+	Count     int         `json:"count"`
+	Filters   BillFilters `json:"filters"`
+	Timestamp string      `json:"timestamp"`
 }
 
-// Bill represents a bill/boleto from the Open Finance API
+// BillFilters represents the filters applied to the bills query
+type BillFilters struct {
+	AccountID   *string `json:"accountId"`
+	OnlyPastDue bool    `json:"onlyPastDue"`
+}
+
+// Bill represents a past due credit card bill (fatura vencida) from the Open Finance API
 type Bill struct {
-	ID            string  `json:"id"`
-	AccountID     string  `json:"accountId"`
-	AmountString  string  `json:"amount"` // API returns amount as string
-	DueDateString string  `json:"dueDate"`
-	Status        string  `json:"status"` // OPEN, PAID, OVERDUE, CANCELLED
-	Description   string  `json:"description"`
-	BillerName    string  `json:"billerName"`
-	Category      *string `json:"category"`
-	Barcode       *string `json:"barcode"`
-	DigitableLine *string `json:"digitableLine"`
+	ID                   string  `json:"id"`
+	AccountID            string  `json:"accountId"`
+	DueDateString        string  `json:"dueDate"`        // Vencimento
+	CloseDateString      *string `json:"closeDate"`      // Fechamento
+	TotalAmountString    string  `json:"totalAmount"`    // Valor total da fatura
+	MinimumPaymentString *string `json:"minimumPayment"` // Pagamento mínimo
+	Status               string  `json:"status"`         // OPEN, CLOSED, OVERDUE, PAID
+	IsOverdue            bool    `json:"isOverdue"`      // Always true from get-bills endpoint
 	// Account context from API
 	AccountName    string `json:"account_name"`
 	AccountType    string `json:"account_type"`
 	AccountSubtype string `json:"account_subtype"`
 	ItemBankName   string `json:"item_bank_name"`
-	// Optional payment info
-	PaymentDateString    *string `json:"paymentDate,omitempty"`
-	RelatedTransactionID *string `json:"relatedTransactionId,omitempty"`
 	// Timestamps
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
 
-// GetAmount returns the amount as a float64
-func (b *Bill) GetAmount() (float64, error) {
-	if b.AmountString == "" {
+// GetTotalAmount returns the total amount as a float64
+func (b *Bill) GetTotalAmount() (float64, error) {
+	if b.TotalAmountString == "" {
 		return 0, nil
 	}
-	amount, err := strconv.ParseFloat(b.AmountString, 64)
+	amount, err := strconv.ParseFloat(b.TotalAmountString, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse amount '%s': %w", b.AmountString, err)
+		return 0, fmt.Errorf("failed to parse totalAmount '%s': %w", b.TotalAmountString, err)
 	}
 	return amount, nil
+}
+
+// GetMinimumPayment returns the minimum payment as a float64
+func (b *Bill) GetMinimumPayment() (*float64, error) {
+	if b.MinimumPaymentString == nil || *b.MinimumPaymentString == "" {
+		return nil, nil
+	}
+	amount, err := strconv.ParseFloat(*b.MinimumPaymentString, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse minimumPayment '%s': %w", *b.MinimumPaymentString, err)
+	}
+	return &amount, nil
 }
 
 // GetDueDate parses and returns the due date
@@ -266,13 +281,10 @@ func (b *Bill) GetDueDate() (*time.Time, error) {
 	if b.DueDateString == "" {
 		return nil, nil
 	}
-	// Try RFC3339 first
 	parsed, err := time.Parse(time.RFC3339, b.DueDateString)
 	if err != nil {
-		// Try date-only format
 		parsed, err = time.Parse("2006-01-02", b.DueDateString)
 		if err != nil {
-			// Try datetime format
 			parsed, err = time.Parse("2006-01-02 15:04:05", b.DueDateString)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse dueDate '%s': %w", b.DueDateString, err)
@@ -282,26 +294,26 @@ func (b *Bill) GetDueDate() (*time.Time, error) {
 	return &parsed, nil
 }
 
-// GetPaymentDate parses and returns the payment date if present
-func (b *Bill) GetPaymentDate() (*time.Time, error) {
-	if b.PaymentDateString == nil || *b.PaymentDateString == "" {
+// GetCloseDate parses and returns the close date if present
+func (b *Bill) GetCloseDate() (*time.Time, error) {
+	if b.CloseDateString == nil || *b.CloseDateString == "" {
 		return nil, nil
 	}
-	parsed, err := time.Parse(time.RFC3339, *b.PaymentDateString)
+	parsed, err := time.Parse(time.RFC3339, *b.CloseDateString)
 	if err != nil {
-		parsed, err = time.Parse("2006-01-02", *b.PaymentDateString)
+		parsed, err = time.Parse("2006-01-02", *b.CloseDateString)
 		if err != nil {
-			parsed, err = time.Parse("2006-01-02 15:04:05", *b.PaymentDateString)
+			parsed, err = time.Parse("2006-01-02 15:04:05", *b.CloseDateString)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse paymentDate '%s': %w", *b.PaymentDateString, err)
+				return nil, fmt.Errorf("failed to parse closeDate '%s': %w", *b.CloseDateString, err)
 			}
 		}
 	}
 	return &parsed, nil
 }
 
-// GetCreatedAtBill parses and returns the createdAt timestamp for bill
-func (b *Bill) GetCreatedAtBill() (*time.Time, error) {
+// GetCreatedAt parses and returns the createdAt timestamp
+func (b *Bill) GetCreatedAt() (*time.Time, error) {
 	if b.CreatedAt == "" {
 		return nil, nil
 	}
@@ -312,8 +324,8 @@ func (b *Bill) GetCreatedAtBill() (*time.Time, error) {
 	return &t, nil
 }
 
-// GetUpdatedAtBill parses and returns the updatedAt timestamp for bill
-func (b *Bill) GetUpdatedAtBill() (*time.Time, error) {
+// GetUpdatedAt parses and returns the updatedAt timestamp
+func (b *Bill) GetUpdatedAt() (*time.Time, error) {
 	if b.UpdatedAt == "" {
 		return nil, nil
 	}
