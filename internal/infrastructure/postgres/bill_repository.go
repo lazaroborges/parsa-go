@@ -61,7 +61,7 @@ func (r *BillRepository) GetByID(ctx context.Context, id string) (*bill.Bill, er
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, bill.ErrBillNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bill: %w", err)
