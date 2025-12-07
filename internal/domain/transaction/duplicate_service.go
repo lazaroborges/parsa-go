@@ -44,6 +44,23 @@ type duplicateCheckWorkerResult struct {
 	err              error
 }
 
+// processedTracker tracks which transaction IDs have been processed to avoid race conditions
+type processedTracker struct {
+	processed sync.Map // map[string]bool
+}
+
+// markProcessed marks a transaction ID as processed, returns true if it was newly marked
+func (p *processedTracker) markProcessed(id string) bool {
+	_, loaded := p.processed.LoadOrStore(id, true)
+	return !loaded // true if we stored it (wasn't there before)
+}
+
+// isProcessed checks if a transaction ID has been processed
+func (p *processedTracker) isProcessed(id string) bool {
+	_, ok := p.processed.Load(id)
+	return ok
+}
+
 // DuplicateCheckService handles checking transactions for potential duplicates
 type DuplicateCheckService struct {
 	repo        Repository
@@ -72,6 +89,16 @@ func NewDuplicateCheckServiceWithWorkers(repo Repository, workerCount int) *Dupl
 // CheckBatchForDuplicates checks a batch of transactions for potential duplicates concurrently
 // This is the main entry point for duplicate checking after batch operations
 func (s *DuplicateCheckService) CheckBatchForDuplicates(ctx context.Context, transactions []*Transaction, userID int64) *DuplicateCheckResult {
+	return s.checkBatchWithTracker(ctx, transactions, userID, &processedTracker{})
+}
+
+// CheckBatchForDuplicatesWithTracker checks a batch using a shared tracker (for cross-batch deduplication)
+func (s *DuplicateCheckService) CheckBatchForDuplicatesWithTracker(ctx context.Context, transactions []*Transaction, userID int64, tracker *processedTracker) *DuplicateCheckResult {
+	return s.checkBatchWithTracker(ctx, transactions, userID, tracker)
+}
+
+// checkBatchWithTracker is the internal implementation that uses a tracker
+func (s *DuplicateCheckService) checkBatchWithTracker(ctx context.Context, transactions []*Transaction, userID int64, tracker *processedTracker) *DuplicateCheckResult {
 	result := &DuplicateCheckResult{
 		TransactionsChecked: len(transactions),
 		Errors:              []string{},
@@ -89,7 +116,7 @@ func (s *DuplicateCheckService) CheckBatchForDuplicates(ctx context.Context, tra
 	var wg sync.WaitGroup
 	for i := 0; i < s.workerCount; i++ {
 		wg.Add(1)
-		go s.duplicateCheckWorker(ctx, jobs, results, &wg)
+		go s.duplicateCheckWorker(ctx, jobs, results, &wg, tracker)
 	}
 
 	// Send jobs to workers
@@ -128,6 +155,7 @@ func (s *DuplicateCheckService) duplicateCheckWorker(
 	jobs <-chan duplicateCheckJob,
 	results chan<- duplicateCheckWorkerResult,
 	wg *sync.WaitGroup,
+	tracker *processedTracker,
 ) {
 	defer wg.Done()
 
@@ -137,7 +165,7 @@ func (s *DuplicateCheckService) duplicateCheckWorker(
 			results <- duplicateCheckWorkerResult{err: ctx.Err()}
 			return
 		default:
-			found, marked, err := s.checkTransactionForDuplicates(ctx, job.transaction, job.userID)
+			found, marked, err := s.checkTransactionForDuplicates(ctx, job.transaction, job.userID, tracker)
 			results <- duplicateCheckWorkerResult{
 				duplicatesFound:  found,
 				duplicatesMarked: marked,
@@ -148,11 +176,19 @@ func (s *DuplicateCheckService) duplicateCheckWorker(
 }
 
 // checkTransactionForDuplicates checks a single transaction for duplicates and marks them
+// When duplicates are found, BOTH the source transaction AND all found duplicates are marked
+// as considered=false (unless they're manipulated or already processed)
 func (s *DuplicateCheckService) checkTransactionForDuplicates(
 	ctx context.Context,
 	txn *Transaction,
 	userID int64,
+	tracker *processedTracker,
 ) (found int, marked int, err error) {
+	// Skip if this transaction was already processed by another worker
+	if tracker.isProcessed(txn.ID) {
+		return 0, 0, nil
+	}
+
 	// Determine the opposite type
 	oppositeType := "CREDIT"
 	if txn.Type == "CREDIT" {
@@ -184,32 +220,27 @@ func (s *DuplicateCheckService) checkTransactionForDuplicates(
 		return 0, 0, nil
 	}
 
-	// Mark duplicates as not considered
+	// Mark the SOURCE transaction as considered=false (it's part of a duplicate group)
+	if !txn.Manipulated && tracker.markProcessed(txn.ID) {
+		if err := s.markTransactionAsDuplicate(ctx, txn); err != nil {
+			log.Printf("Failed to mark source transaction %s as duplicate: %v", txn.ID, err)
+		} else {
+			marked++
+		}
+	}
+
+	// Mark all found duplicates as considered=false
 	for _, dup := range duplicates {
 		if dup.Manipulated {
 			continue // Skip manipulated transactions
 		}
 
-		// Check if note already contains the duplicate message
-		if dup.Notes != nil {
-			if strings.Contains(*dup.Notes, "Esta transação não será considerada") ||
-				strings.Contains(*dup.Notes, "desconsiderada") {
-				continue // Already marked
-			}
+		// Atomically check and mark as processed
+		if !tracker.markProcessed(dup.ID) {
+			continue // Already processed by another worker
 		}
 
-		// Update the duplicate transaction
-		considered := false
-		newNotes := DuplicateNote
-		if dup.Notes != nil && *dup.Notes != "" {
-			newNotes = *dup.Notes + " " + DuplicateNote
-		}
-
-		_, err := s.repo.Update(ctx, dup.ID, UpdateTransactionParams{
-			Considered: &considered,
-			Notes:      &newNotes,
-		})
-		if err != nil {
+		if err := s.markTransactionAsDuplicate(ctx, dup); err != nil {
 			log.Printf("Failed to mark transaction %s as duplicate: %v", dup.ID, err)
 			continue
 		}
@@ -220,6 +251,30 @@ func (s *DuplicateCheckService) checkTransactionForDuplicates(
 	return found, marked, nil
 }
 
+// markTransactionAsDuplicate marks a single transaction as considered=false with the duplicate note
+func (s *DuplicateCheckService) markTransactionAsDuplicate(ctx context.Context, txn *Transaction) error {
+	// Check if note already contains the duplicate message (idempotency)
+	if txn.Notes != nil {
+		if strings.Contains(*txn.Notes, "Esta transação não será considerada") ||
+			strings.Contains(*txn.Notes, "desconsiderada") {
+			return nil // Already marked, nothing to do
+		}
+	}
+
+	// Build new notes
+	newNotes := DuplicateNote
+	if txn.Notes != nil && *txn.Notes != "" {
+		newNotes = *txn.Notes + " " + DuplicateNote
+	}
+
+	considered := false
+	_, err := s.repo.Update(ctx, txn.ID, UpdateTransactionParams{
+		Considered: &considered,
+		Notes:      &newNotes,
+	})
+	return err
+}
+
 // CheckTransactionForDuplicates checks a single transaction for duplicates
 // This is useful for checking individual transactions during sync
 func (s *DuplicateCheckService) CheckTransactionForDuplicates(
@@ -227,7 +282,7 @@ func (s *DuplicateCheckService) CheckTransactionForDuplicates(
 	txn *Transaction,
 	userID int64,
 ) (duplicatesFound int, duplicatesMarked int, err error) {
-	return s.checkTransactionForDuplicates(ctx, txn, userID)
+	return s.checkTransactionForDuplicates(ctx, txn, userID, &processedTracker{})
 }
 
 // CheckBatchForDuplicatesConcurrent processes duplicate checking with a configurable concurrency level
@@ -251,6 +306,9 @@ func (s *DuplicateCheckService) CheckBatchForDuplicatesConcurrent(
 		return result
 	}
 
+	// Shared tracker to avoid race conditions
+	tracker := &processedTracker{}
+
 	// Use semaphore pattern for bounded concurrency
 	sem := make(chan struct{}, concurrency)
 	var mu sync.Mutex
@@ -272,7 +330,7 @@ func (s *DuplicateCheckService) CheckBatchForDuplicatesConcurrent(
 				return
 			}
 
-			found, marked, err := s.checkTransactionForDuplicates(ctx, t, userID)
+			found, marked, err := s.checkTransactionForDuplicates(ctx, t, userID, tracker)
 
 			mu.Lock()
 			if err != nil {
@@ -295,12 +353,16 @@ func (s *DuplicateCheckService) CheckBatchForDuplicatesConcurrent(
 // CheckAllUserTransactions fetches and checks ALL existing transactions for a user
 // This is useful for running duplicate detection on historical data
 // Transactions are processed in batches to avoid memory issues with large datasets
+// A shared tracker is used across all batches to prevent cross-batch race conditions
 func (s *DuplicateCheckService) CheckAllUserTransactions(ctx context.Context, userID int64) (*DuplicateCheckResult, error) {
 	log.Printf("Starting full duplicate check for user %d", userID)
 
 	totalResult := &DuplicateCheckResult{
 		Errors: []string{},
 	}
+
+	// Shared tracker across all batches to prevent duplicate processing
+	tracker := &processedTracker{}
 
 	offset := 0
 	batchNum := 0
@@ -325,8 +387,8 @@ func (s *DuplicateCheckService) CheckAllUserTransactions(ctx context.Context, us
 		batchNum++
 		log.Printf("Processing batch %d: %d transactions (offset=%d)", batchNum, len(transactions), offset)
 
-		// Process this batch concurrently
-		batchResult := s.CheckBatchForDuplicates(ctx, transactions, userID)
+		// Process this batch concurrently with shared tracker
+		batchResult := s.CheckBatchForDuplicatesWithTracker(ctx, transactions, userID, tracker)
 
 		// Aggregate results
 		totalResult.TransactionsChecked += batchResult.TransactionsChecked
