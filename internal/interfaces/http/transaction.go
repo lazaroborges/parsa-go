@@ -44,7 +44,7 @@ type TransactionAPIResponse struct {
 	Tags                []string `json:"tags"`
 	Manipulated         bool     `json:"manipulated"`
 	LastUpdateDateParsa string   `json:"lastUpdateDateParsa"`
-	Cousin              *string  `json:"cousin"`
+	Cousin              *int64   `json:"cousin"`
 	DontAskAgain        bool     `json:"dont_ask_again"`
 }
 
@@ -192,6 +192,12 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		category = *txn.Category
 	}
 
+	// Return cousin ID as integer pointer (null if nil or 0)
+	var cousin *int64
+	if txn.Cousin != nil && *txn.Cousin != 0 {
+		cousin = txn.Cousin
+	}
+
 	return TransactionAPIResponse{
 		ID:                  txn.ID,
 		Description:         txn.Description,
@@ -208,7 +214,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Tags:                []string{}, // Return empty array for now
 		Manipulated:         txn.Manipulated,
 		LastUpdateDateParsa: txn.UpdatedAt.Format(time.RFC3339),
-		Cousin:              nil,   // Return null for now
+		Cousin:              cousin,
 		DontAskAgain:        false, // Default false
 	}
 }

@@ -22,6 +22,7 @@ type Transaction struct {
 	Tags              []string  `json:"tags"`
 	Manipulated       bool      `json:"manipulated"`
 	Notes             *string   `json:"notes,omitempty"`
+	Cousin            *int64    `json:"cousin,omitempty"`
 }
 
 type CreateTransactionParams struct {
