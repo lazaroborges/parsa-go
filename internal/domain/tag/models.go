@@ -55,11 +55,24 @@ type UpdateTagParams struct {
 }
 
 func (p *UpdateTagParams) Validate() error {
-	if p.Name != nil && len(*p.Name) > 128 {
-		return errors.New("name must be 128 characters or less")
+	if p.Name != nil {
+		if *p.Name == "" {
+			return errors.New("name cannot be empty")
+		}
+		if len(*p.Name) > 128 {
+			return errors.New("name must be 128 characters or less")
+		}
 	}
-	if p.Color != nil && len(*p.Color) > 12 {
-		return errors.New("color must be 12 characters or less")
+	if p.Color != nil {
+		if *p.Color == "" {
+			return errors.New("color cannot be empty")
+		}
+		if len(*p.Color) > 12 {
+			return errors.New("color must be 12 characters or less")
+		}
+	}
+	if p.DisplayOrder != nil && *p.DisplayOrder < 0 {
+		return errors.New("display order must be non-negative")
 	}
 	if p.Description != nil && len(*p.Description) > 255 {
 		return errors.New("description must be 255 characters or less")
