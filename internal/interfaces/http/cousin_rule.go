@@ -23,10 +23,10 @@ func NewCousinRuleHandler(cousinRuleService *cousinrule.Service) *CousinRuleHand
 
 // ApplyRuleRequest is the request body for applying a cousin rule
 type ApplyRuleRequest struct {
-	CousinID     int64                  `json:"cousin_id"`
-	TriggeringID string                 `json:"triggering_id,omitempty"`
-	CreateRule   bool                   `json:"create_rule"`
-	DontAskAgain bool                   `json:"dont_ask_again"`
+	CousinID     int64                  `json:"cousinId"`
+	TriggeringID string                 `json:"triggeringId,omitempty"`
+	CreateRule   bool                   `json:"createRule"`
+	DontAskAgain bool                   `json:"dontAskAgain"`
 	Changes      ApplyRuleChangeRequest `json:"changes"`
 }
 
@@ -42,9 +42,9 @@ type ApplyRuleChangeRequest struct {
 // ApplyRuleResponse is the response for applying a cousin rule
 type ApplyRuleResponse struct {
 	Message             string `json:"message"`
-	TransactionsUpdated int    `json:"transactions_updated"`
-	RuleCreated         bool   `json:"rule_created"`
-	RuleUpdated         bool   `json:"rule_updated"`
+	TransactionsUpdated int    `json:"transactionsUpdated"`
+	RuleCreated         bool   `json:"ruleCreated"`
+	RuleUpdated         bool   `json:"ruleUpdated"`
 }
 
 // CousinRuleAPIResponse is the API response format for a cousin rule
@@ -121,7 +121,7 @@ func (h *CousinRuleHandler) handleApplyRule(w http.ResponseWriter, r *http.Reque
 	}
 
 	if req.CousinID == 0 {
-		http.Error(w, "cousin_id is required", http.StatusBadRequest)
+		http.Error(w, "cousinId is required", http.StatusBadRequest)
 		return
 	}
 
