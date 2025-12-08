@@ -35,7 +35,7 @@ func (j *JWT) Generate(userID int64, email string) (string, error) {
 		UserID: userID,
 		Email:  email,
 		Iat:    time.Now().Unix(),
-		Exp:    time.Now().Add(24 * time.Hour).Unix(),
+		Exp:    time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 
 	headerJSON, err := json.Marshal(header)
