@@ -65,8 +65,8 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 
 func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
 	query := `
-		SELECT id, account_id, amount, description, category, transaction_date, type, status,
-		       provider_created_at, provider_updated_at, created_at, updated_at,
+		SELECT id, account_id, amount, description, category, provider_category_id, transaction_date,
+		       type, status, provider_created_at, provider_updated_at, created_at, updated_at,
 		       considered, is_open_finance, tags, manipulated, notes, cousin
 		FROM transactions
 		WHERE id = $1
@@ -79,7 +79,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&txn.ID, &txn.AccountID, &txn.Amount,
-		&txn.Description, &txn.Category, &txn.TransactionDate,
+		&txn.Description, &txn.Category, &txn.ProviderCategoryID, &txn.TransactionDate,
 		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&txn.CreatedAt, &txn.UpdatedAt,
@@ -111,8 +111,8 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 
 func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
-		SELECT id, account_id, amount, description, category, transaction_date, type, status,
-		       provider_created_at, provider_updated_at, created_at, updated_at,
+		SELECT id, account_id, amount, description, category, provider_category_id, transaction_date,
+		       type, status, provider_created_at, provider_updated_at, created_at, updated_at,
 		       considered, is_open_finance, tags, manipulated, notes, cousin
 		FROM transactions
 		WHERE account_id = $1
@@ -132,9 +132,10 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 // ListByUserID returns all transactions for a user across all accounts
 func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
-		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.transaction_date, t.type, t.status,
-		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
-		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
+		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.provider_category_id,
+		       t.transaction_date, t.type, t.status, t.provider_created_at, t.provider_updated_at,
+		       t.created_at, t.updated_at, t.considered, t.is_open_finance, t.tags, t.manipulated,
+		       t.notes, t.cousin
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
 		WHERE a.user_id = $1
@@ -180,7 +181,7 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 
 		err := rows.Scan(
 			&txn.ID, &txn.AccountID, &txn.Amount,
-			&txn.Description, &txn.Category, &txn.TransactionDate,
+			&txn.Description, &txn.Category, &txn.ProviderCategoryID, &txn.TransactionDate,
 			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
 			&txn.CreatedAt, &txn.UpdatedAt,
@@ -226,8 +227,8 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		    notes = COALESCE($8, notes),
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $9
-		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at,
+		RETURNING id, account_id, amount, description, category, provider_category_id, transaction_date,
+		          type, status, provider_created_at, provider_updated_at, created_at, updated_at,
 		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
@@ -242,7 +243,7 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		params.Type, params.Status, params.Considered, params.Notes, id,
 	).Scan(
 		&txn.ID, &txn.AccountID, &txn.Amount,
-		&txn.Description, &txn.Category, &txn.TransactionDate,
+		&txn.Description, &txn.Category, &txn.ProviderCategoryID, &txn.TransactionDate,
 		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&txn.CreatedAt, &txn.UpdatedAt,
@@ -298,8 +299,8 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 		    notes = COALESCE($4, notes),
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $5
-		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at,
+		RETURNING id, account_id, amount, description, category, provider_category_id, transaction_date,
+		          type, status, provider_created_at, provider_updated_at, created_at, updated_at,
 		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
@@ -314,7 +315,7 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 			u.Params.Description, u.Params.Category, u.Params.Considered, u.Params.Notes, u.ID,
 		).Scan(
 			&txn.ID, &txn.AccountID, &txn.Amount,
-			&txn.Description, &txn.Category, &txn.TransactionDate,
+			&txn.Description, &txn.Category, &txn.ProviderCategoryID, &txn.TransactionDate,
 			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
 			&txn.CreatedAt, &txn.UpdatedAt,
@@ -373,21 +374,22 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 // Upsert inserts or updates a transaction (used for syncing from provider)
 func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	query := `
-		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date,
-		                          type, status, provider_created_at, provider_updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO transactions (id, account_id, amount, description, category, provider_category_id,
+		                          transaction_date, type, status, provider_created_at, provider_updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET
 		    amount = EXCLUDED.amount,
 		    description = EXCLUDED.description,
 		    category = EXCLUDED.category,
+		    provider_category_id = EXCLUDED.provider_category_id,
 		    transaction_date = EXCLUDED.transaction_date,
 		    type = EXCLUDED.type,
 		    status = EXCLUDED.status,
 		    provider_created_at = EXCLUDED.provider_created_at,
 		    provider_updated_at = EXCLUDED.provider_updated_at,
 		    updated_at = CURRENT_TIMESTAMP
-		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at,
+		RETURNING id, account_id, amount, description, category, provider_category_id, transaction_date,
+		          type, status, provider_created_at, provider_updated_at, created_at, updated_at,
 		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
@@ -399,12 +401,12 @@ func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.U
 	err := r.db.QueryRowContext(
 		ctx, query,
 		params.ID, params.AccountID, params.Amount, params.Description, params.Category,
-		params.TransactionDate, params.Type, params.Status,
+		params.ProviderCategoryID, params.TransactionDate, params.Type, params.Status,
 		params.ProviderCreatedAt, params.ProviderUpdatedAt,
 	).Scan(
 		&transaction.ID, &transaction.AccountID, &transaction.Amount,
-		&transaction.Description, &transaction.Category, &transaction.TransactionDate,
-		&transaction.Type, &transaction.Status,
+		&transaction.Description, &transaction.Category, &transaction.ProviderCategoryID,
+		&transaction.TransactionDate, &transaction.Type, &transaction.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&transaction.CreatedAt, &transaction.UpdatedAt,
 		&transaction.Considered, &transaction.IsOpenFinance, &tags, &transaction.Manipulated, &transaction.Notes,
@@ -505,9 +507,10 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 // - Not manually manipulated
 func (r *TransactionRepository) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
 	query := `
-		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.transaction_date, t.type, t.status,
-		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
-		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
+		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.provider_category_id,
+		       t.transaction_date, t.type, t.status, t.provider_created_at, t.provider_updated_at,
+		       t.created_at, t.updated_at, t.considered, t.is_open_finance, t.tags, t.manipulated,
+		       t.notes, t.cousin
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
 		WHERE t.id != $1
