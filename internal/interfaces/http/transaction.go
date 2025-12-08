@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/cousinrule"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/shared/middleware"
 
@@ -51,12 +52,14 @@ type TransactionAPIResponse struct {
 type TransactionHandler struct {
 	transactionRepo transaction.Repository
 	accountRepo     account.Repository
+	cousinRuleRepo  cousinrule.Repository
 }
 
-func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository, cousinRuleRepo cousinrule.Repository) *TransactionHandler {
 	return &TransactionHandler{
 		transactionRepo: transactionRepo,
 		accountRepo:     accountRepo,
+		cousinRuleRepo:  cousinRuleRepo,
 	}
 }
 
@@ -170,7 +173,14 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		} else {
 			txn.Tags = []string{}
 		}
-		results = append(results, toTransactionAPIResponse(txn))
+
+		// Check dont_ask_again status if transaction has a cousin
+		dontAskAgain := false
+		if txn.Cousin != nil && *txn.Cousin != 0 && h.cousinRuleRepo != nil {
+			dontAskAgain, _ = h.cousinRuleRepo.CheckDontAskAgain(r.Context(), userID, *txn.Cousin, txn.Type)
+		}
+
+		results = append(results, toTransactionAPIResponseWithDontAsk(txn, dontAskAgain))
 	}
 
 	response := TransactionListResponse{
@@ -186,6 +196,11 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 
 // toTransactionAPIResponse converts a domain Transaction to the API response format
 func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIResponse {
+	return toTransactionAPIResponseWithDontAsk(txn, false)
+}
+
+// toTransactionAPIResponseWithDontAsk converts a domain Transaction to the API response format with dont_ask_again
+func toTransactionAPIResponseWithDontAsk(txn *transaction.Transaction, dontAskAgain bool) TransactionAPIResponse {
 	// Amount should be absolute value
 	amount := txn.Amount
 	if txn.Type == "DEBIT" {
@@ -231,7 +246,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Manipulated:         txn.Manipulated,
 		LastUpdateDateParsa: txn.UpdatedAt.Format(time.RFC3339),
 		Cousin:              cousin,
-		DontAskAgain:        false, // Default false
+		DontAskAgain:        dontAskAgain,
 	}
 }
 

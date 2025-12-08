@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/cousinrule"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/infrastructure/crypto"
 	ofclient "parsa/internal/infrastructure/openfinance"
@@ -23,6 +24,7 @@ type Dependencies struct {
 	AccountHandler     *httphandlers.AccountHandler
 	TransactionHandler *httphandlers.TransactionHandler
 	TagHandler         *httphandlers.TagHandler
+	CousinRuleHandler  *httphandlers.CousinRuleHandler
 
 	// Auth
 	JWT *auth.JWT
@@ -100,9 +102,16 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 
 	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
-	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
 	tagRepo := postgres.NewTagRepository(db)
 	tagHandler := httphandlers.NewTagHandler(tagRepo)
+
+	// Initialize cousin rule components
+	cousinRuleRepo := postgres.NewCousinRuleRepository(db)
+	cousinRuleService := cousinrule.NewService(cousinRuleRepo, transactionRepo)
+	cousinRuleHandler := httphandlers.NewCousinRuleHandler(cousinRuleService)
+
+	// Initialize transaction handler with cousin rule repo for dont_ask_again lookups
+	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo)
 
 	return &Dependencies{
 		DB:                     db,
@@ -111,6 +120,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		AccountHandler:         accountHandler,
 		TransactionHandler:     transactionHandler,
 		TagHandler:             tagHandler,
+		CousinRuleHandler:      cousinRuleHandler,
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
