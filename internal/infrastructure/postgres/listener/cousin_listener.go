@@ -168,7 +168,7 @@ func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNoti
 	}
 
 	if rule == nil {
-		log.Printf("No rule found for cousin %d, user %d, type %s", payload.CousinID, userID, payload.TxType)
+		log.Printf("No matching cousin rule found")
 		return
 	}
 
