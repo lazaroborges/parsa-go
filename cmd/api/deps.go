@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"parsa/internal/domain/account"
@@ -9,6 +10,7 @@ import (
 	"parsa/internal/infrastructure/crypto"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/infrastructure/postgres/listener"
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/shared/auth"
 	"parsa/internal/shared/config"
@@ -36,6 +38,9 @@ type Dependencies struct {
 
 	// Repositories (for scheduler job provider)
 	UserRepo *postgres.UserRepository
+
+	// Background listeners
+	CousinListener *listener.CousinListener
 }
 
 // NewDependencies initializes all application dependencies.
@@ -113,6 +118,10 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize transaction handler with cousin rule repo for dont_ask_again lookups
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo)
 
+	// Initialize and start cousin notification listener
+	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
+	cousinListener.Start(context.Background())
+
 	return &Dependencies{
 		DB:                     db,
 		AuthHandler:            authHandler,
@@ -126,11 +135,17 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		TransactionSyncService: transactionSyncService,
 		BillSyncService:        billSyncService,
 		UserRepo:               userRepo,
+		CousinListener:         cousinListener,
 	}, nil
 }
 
 // Close releases all resources held by dependencies.
 func (d *Dependencies) Close() {
+	// Stop listeners first
+	if d.CousinListener != nil {
+		d.CousinListener.Stop()
+	}
+
 	if d.DB != nil {
 		d.DB.Close()
 	}
