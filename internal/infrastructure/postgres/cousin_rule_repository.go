@@ -468,6 +468,8 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 	argIndex := 1
 
 	if changes.Category != nil {
+		// Store original category before overwriting
+		setClauses = append(setClauses, "original_category = COALESCE(t.original_category, t.category)")
 		setClauses = append(setClauses, fmt.Sprintf("category = $%d", argIndex))
 		args = append(args, *changes.Category)
 		argIndex++
@@ -475,7 +477,7 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 
 	if changes.Description != nil {
 		// Store original description before overwriting
-		setClauses = append(setClauses, fmt.Sprintf("original_description = COALESCE(original_description, description)"))
+		setClauses = append(setClauses, "original_description = COALESCE(t.original_description, t.description)")
 		setClauses = append(setClauses, fmt.Sprintf("description = $%d", argIndex))
 		args = append(args, *changes.Description)
 		argIndex++
