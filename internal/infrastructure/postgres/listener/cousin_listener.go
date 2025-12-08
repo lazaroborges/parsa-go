@@ -179,8 +179,7 @@ func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNoti
 		return
 	}
 
-	log.Printf("Applied cousin rule to transaction %s (cousin=%d, user=%d)",
-		payload.TransactionID, payload.CousinID, userID)
+	log.Printf("Successfully applied cousin rule to transaction")
 }
 
 func (l *CousinListener) findMatchingRule(ctx context.Context, userID, cousinID int64, txType string) (*cousinrule.CousinRule, error) {
