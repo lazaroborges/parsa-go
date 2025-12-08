@@ -18,6 +18,12 @@ func NewCousinRuleRepository(db *DB) *CousinRuleRepository {
 }
 
 func (r *CousinRuleRepository) Create(ctx context.Context, params cousinrule.CreateCousinRuleParams) (*cousinrule.CousinRule, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `
 		INSERT INTO user_ck_values (user_id, cousin_id, type, category, description, notes, considered, dont_ask_again)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -28,7 +34,7 @@ func (r *CousinRuleRepository) Create(ctx context.Context, params cousinrule.Cre
 	var txType, category, description, notes sql.NullString
 	var considered sql.NullBool
 
-	err := r.db.QueryRowContext(ctx, query,
+	err = tx.QueryRowContext(ctx, query,
 		params.UserID, params.CousinID, params.Type, params.Category,
 		params.Description, params.Notes, params.Considered, params.DontAskAgain,
 	).Scan(
@@ -60,10 +66,14 @@ func (r *CousinRuleRepository) Create(ctx context.Context, params cousinrule.Cre
 
 	// Set tags if provided
 	if len(params.Tags) > 0 {
-		if err := r.SetRuleTags(ctx, rule.ID, params.Tags); err != nil {
+		if err := r.setRuleTagsTx(ctx, tx, rule.ID, params.Tags); err != nil {
 			return nil, fmt.Errorf("failed to set rule tags: %w", err)
 		}
 		rule.Tags = params.Tags
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &rule, nil
@@ -248,6 +258,12 @@ func scanCousinRules(rows *sql.Rows) ([]*cousinrule.CousinRule, error) {
 }
 
 func (r *CousinRuleRepository) Update(ctx context.Context, id int64, params cousinrule.UpdateCousinRuleParams) (*cousinrule.CousinRule, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `
 		UPDATE user_ck_values
 		SET category = COALESCE($1, category),
@@ -264,7 +280,7 @@ func (r *CousinRuleRepository) Update(ctx context.Context, id int64, params cous
 	var txType, category, description, notes sql.NullString
 	var considered sql.NullBool
 
-	err := r.db.QueryRowContext(ctx, query,
+	err = tx.QueryRowContext(ctx, query,
 		params.Category, params.Description, params.Notes, params.Considered, params.DontAskAgain, id,
 	).Scan(
 		&rule.ID, &rule.UserID, &rule.CousinID, &txType,
@@ -298,16 +314,26 @@ func (r *CousinRuleRepository) Update(ctx context.Context, id int64, params cous
 
 	// Update tags if provided
 	if params.Tags != nil {
-		if err := r.SetRuleTags(ctx, rule.ID, *params.Tags); err != nil {
+		if err := r.setRuleTagsTx(ctx, tx, rule.ID, *params.Tags); err != nil {
 			return nil, fmt.Errorf("failed to set rule tags: %w", err)
 		}
 		rule.Tags = *params.Tags
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &rule, nil
 }
 
 func (r *CousinRuleRepository) Upsert(ctx context.Context, params cousinrule.CreateCousinRuleParams) (*cousinrule.CousinRule, bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	// Use INSERT ... ON CONFLICT to handle upsert
 	query := `
 		INSERT INTO user_ck_values (user_id, cousin_id, type, category, description, notes, considered, dont_ask_again)
@@ -328,7 +354,7 @@ func (r *CousinRuleRepository) Upsert(ctx context.Context, params cousinrule.Cre
 	var considered sql.NullBool
 	var wasInserted bool
 
-	err := r.db.QueryRowContext(ctx, query,
+	err = tx.QueryRowContext(ctx, query,
 		params.UserID, params.CousinID, params.Type, params.Category,
 		params.Description, params.Notes, params.Considered, params.DontAskAgain,
 	).Scan(
@@ -360,10 +386,14 @@ func (r *CousinRuleRepository) Upsert(ctx context.Context, params cousinrule.Cre
 
 	// Set tags if provided
 	if len(params.Tags) > 0 {
-		if err := r.SetRuleTags(ctx, rule.ID, params.Tags); err != nil {
+		if err := r.setRuleTagsTx(ctx, tx, rule.ID, params.Tags); err != nil {
 			return nil, false, fmt.Errorf("failed to set rule tags: %w", err)
 		}
 		rule.Tags = params.Tags
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &rule, wasInserted, nil
@@ -396,8 +426,21 @@ func (r *CousinRuleRepository) SetRuleTags(ctx context.Context, ruleID int64, ta
 	}
 	defer tx.Rollback()
 
+	if err := r.setRuleTagsTx(ctx, tx, ruleID, tagIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// setRuleTagsTx performs the tag update within an existing transaction.
+func (r *CousinRuleRepository) setRuleTagsTx(ctx context.Context, tx *sql.Tx, ruleID int64, tagIDs []string) error {
 	// Delete existing tags
-	_, err = tx.ExecContext(ctx, `DELETE FROM user_ck_value_tags WHERE user_ck_value_id = $1`, ruleID)
+	_, err := tx.ExecContext(ctx, `DELETE FROM user_ck_value_tags WHERE user_ck_value_id = $1`, ruleID)
 	if err != nil {
 		return fmt.Errorf("failed to delete existing tags: %w", err)
 	}
@@ -421,10 +464,6 @@ func (r *CousinRuleRepository) SetRuleTags(ctx context.Context, ruleID int64, ta
 		if err != nil {
 			return fmt.Errorf("failed to insert tags: %w", err)
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -500,17 +539,6 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 	cousinArgIndex := argIndex
 	userArgIndex := argIndex + 1
 
-	// Build WHERE clause
-	whereClause := fmt.Sprintf(`
-		WHERE t.cousin = $%d
-		  AND a.user_id = $%d
-	`, cousinArgIndex, userArgIndex)
-
-	if txType != nil {
-		args = append(args, *txType)
-		whereClause += fmt.Sprintf(" AND t.type = $%d", userArgIndex+1)
-	}
-
 	query := fmt.Sprintf(`
 		UPDATE transactions t
 		SET %s
@@ -521,6 +549,7 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 	`, strings.Join(setClauses, ", "), cousinArgIndex, userArgIndex)
 
 	if txType != nil {
+		args = append(args, *txType)
 		query += fmt.Sprintf(" AND t.type = $%d", userArgIndex+1)
 	}
 

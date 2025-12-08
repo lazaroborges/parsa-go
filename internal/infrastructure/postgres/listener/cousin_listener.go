@@ -27,11 +27,11 @@ type CousinNotification struct {
 
 // CousinListener listens for PostgreSQL notifications when transactions get cousins assigned
 type CousinListener struct {
-	connStr          string
-	cousinRuleRepo   cousinrule.Repository
-	db               *sql.DB
-	shutdownCh       chan struct{}
-	done             chan struct{}
+	connStr        string
+	cousinRuleRepo cousinrule.Repository
+	db             *sql.DB
+	shutdownCh     chan struct{}
+	done           chan struct{}
 }
 
 // NewCousinListener creates a new listener for cousin assignment notifications
@@ -135,7 +135,7 @@ func (l *CousinListener) connectAndListen(ctx context.Context) {
 }
 
 func (l *CousinListener) handleNotification(ctx context.Context, notification *pq.Notification) {
-	log.Printf("Received notification on channel %s: %s", notification.Channel, notification.Extra)
+	log.Printf("Received notification on channel %s", notification.Channel)
 
 	var payload CousinNotification
 	if err := json.Unmarshal([]byte(notification.Extra), &payload); err != nil {
@@ -143,8 +143,8 @@ func (l *CousinListener) handleNotification(ctx context.Context, notification *p
 		return
 	}
 
-	// Process in a separate goroutine to not block the listener
-	go l.applyCousinRule(ctx, payload)
+	// Use background context since parent ctx may be cancelled during shutdown
+	go l.applyCousinRule(context.Background(), payload)
 }
 
 func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNotification) {
