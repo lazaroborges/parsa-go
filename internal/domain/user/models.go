@@ -16,7 +16,7 @@ type User struct {
 	AvatarURL        *string   `json:"avatarUrl,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
-	ProviderKey      *string   `json:"providerKey,omitempty"`      // Nullable
+	ProviderKey      *string   `json:"-"`                          // Nullable, not exposed in API
 	BalanceAvailable *float64  `json:"balanceAvailable,omitempty"` // Calculated field
 	BalanceTotal     *float64  `json:"balanceTotal,omitempty"`     // Calculated field
 }
