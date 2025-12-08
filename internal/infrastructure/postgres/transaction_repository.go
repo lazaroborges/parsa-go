@@ -496,6 +496,74 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 	return affected, nil
 }
 
+// SetTransactionTags replaces all tags for a transaction
+func (r *TransactionRepository) SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete existing tags
+	_, err = tx.ExecContext(ctx, `DELETE FROM transaction_tags WHERE transaction_id = $1`, transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing tags: %w", err)
+	}
+
+	// Insert new tags
+	if len(tagIDs) > 0 {
+		valueStrings := make([]string, 0, len(tagIDs))
+		valueArgs := make([]any, 0, len(tagIDs)*2)
+
+		for i, tagID := range tagIDs {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
+			valueArgs = append(valueArgs, transactionID, tagID)
+		}
+
+		query := fmt.Sprintf(
+			`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES %s ON CONFLICT DO NOTHING`,
+			strings.Join(valueStrings, ", "),
+		)
+
+		_, err = tx.ExecContext(ctx, query, valueArgs...)
+		if err != nil {
+			return fmt.Errorf("failed to insert tags: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// GetTransactionTags returns all tag IDs for a transaction
+func (r *TransactionRepository) GetTransactionTags(ctx context.Context, transactionID string) ([]string, error) {
+	query := `SELECT tag_id FROM transaction_tags WHERE transaction_id = $1`
+
+	rows, err := r.db.QueryContext(ctx, query, transactionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction tags: %w", err)
+	}
+	defer rows.Close()
+
+	var tagIDs []string
+	for rows.Next() {
+		var tagID string
+		if err := rows.Scan(&tagID); err != nil {
+			return nil, fmt.Errorf("failed to scan tag id: %w", err)
+		}
+		tagIDs = append(tagIDs, tagID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tag ids: %w", err)
+	}
+
+	return tagIDs, nil
+}
+
 // FindPotentialDuplicates finds transactions that could be duplicates based on criteria:
 // - Different ID from the source transaction
 // - Opposite type (DEBIT <-> CREDIT)

@@ -22,6 +22,7 @@ type Dependencies struct {
 	UserHandler        *httphandlers.UserHandler
 	AccountHandler     *httphandlers.AccountHandler
 	TransactionHandler *httphandlers.TransactionHandler
+	TagHandler         *httphandlers.TagHandler
 
 	// Auth
 	JWT *auth.JWT
@@ -100,6 +101,8 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
+	tagRepo := postgres.NewTagRepository(db)
+	tagHandler := httphandlers.NewTagHandler(tagRepo)
 
 	return &Dependencies{
 		DB:                     db,
@@ -107,6 +110,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		UserHandler:            userHandler,
 		AccountHandler:         accountHandler,
 		TransactionHandler:     transactionHandler,
+		TagHandler:             tagHandler,
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
