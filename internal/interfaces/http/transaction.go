@@ -77,11 +77,12 @@ type BatchCreateRequest struct {
 
 // PatchTransactionItem represents a single transaction patch with ID
 type PatchTransactionItem struct {
-	ID          string  `json:"id"`
-	Description *string `json:"description,omitempty"`
-	Category    *string `json:"category,omitempty"`
-	Considered  *bool   `json:"considered,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
+	ID          string    `json:"id"`
+	Description *string   `json:"description,omitempty"`
+	Category    *string   `json:"category,omitempty"`
+	Considered  *bool     `json:"considered,omitempty"`
+	Notes       *string   `json:"notes,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"` // nil = don't update, empty = clear all
 }
 
 // BatchPatchRequest wraps multiple transaction patch requests
@@ -157,9 +158,18 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		previous = &prevURL
 	}
 
-	// Transform transactions to API response format
+	// Fetch tags for each transaction and transform to API response format
 	results := make([]TransactionAPIResponse, 0, len(transactions))
 	for _, txn := range transactions {
+		tags, err := h.transactionRepo.GetTransactionTags(r.Context(), txn.ID)
+		if err != nil {
+			log.Printf("Error getting tags for transaction %s: %v", txn.ID, err)
+			txn.Tags = []string{}
+		} else if tags != nil {
+			txn.Tags = tags
+		} else {
+			txn.Tags = []string{}
+		}
 		results = append(results, toTransactionAPIResponse(txn))
 	}
 
@@ -198,6 +208,12 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		cousin = txn.Cousin
 	}
 
+	// Use actual tags or empty slice
+	tags := txn.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	return TransactionAPIResponse{
 		ID:                  txn.ID,
 		Description:         txn.Description,
@@ -211,7 +227,7 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Status:              strings.ToLower(txn.Status),
 		Considered:          txn.Considered,
 		IsOpenFinance:       txn.IsOpenFinance,
-		Tags:                []string{}, // Return empty array for now
+		Tags:                tags,
 		Manipulated:         txn.Manipulated,
 		LastUpdateDateParsa: txn.UpdatedAt.Format(time.RFC3339),
 		Cousin:              cousin,
@@ -641,6 +657,30 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 				Error:   "Failed to update transaction",
 			})
 			continue
+		}
+
+		// Update tags if provided
+		if patchReq.Tags != nil {
+			if err := h.transactionRepo.SetTransactionTags(r.Context(), patchReq.ID, *patchReq.Tags); err != nil {
+				log.Printf("Error setting tags for transaction %s in batch at index %d: %v", patchReq.ID, idx, err)
+				results = append(results, BatchItemResult{
+					Index:   idx,
+					Success: false,
+					Error:   "Failed to update tags",
+				})
+				continue
+			}
+			// Update the Tags field in response
+			updatedTxn.Tags = *patchReq.Tags
+		} else {
+			// Fetch current tags for response
+			tags, err := h.transactionRepo.GetTransactionTags(r.Context(), patchReq.ID)
+			if err != nil {
+				log.Printf("Error getting tags for transaction %s: %v", patchReq.ID, err)
+				updatedTxn.Tags = []string{}
+			} else {
+				updatedTxn.Tags = tags
+			}
 		}
 
 		successCount++

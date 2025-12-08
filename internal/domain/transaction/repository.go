@@ -29,4 +29,8 @@ type Repository interface {
 	// Returns transactions with different ID, opposite type, same absolute amount,
 	// and transaction date within the specified range for the same user
 	FindPotentialDuplicates(ctx context.Context, criteria DuplicateCriteria) ([]*Transaction, error)
+	// SetTransactionTags replaces all tags for a transaction
+	SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error
+	// GetTransactionTags returns all tag IDs for a transaction
+	GetTransactionTags(ctx context.Context, transactionID string) ([]string, error)
 }

@@ -46,6 +46,7 @@ type UpdateTransactionParams struct {
 	Status          *string
 	Considered      *bool
 	Notes           *string
+	Tags            *[]string // nil = don't update, empty slice = clear all tags
 }
 
 // UpsertTransactionParams is used for syncing transactions from the provider
