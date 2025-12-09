@@ -7,12 +7,12 @@ import (
 
 // DuplicateCriteria defines the search criteria for finding potential duplicates
 type DuplicateCriteria struct {
-	ExcludeID      string    // The transaction ID to exclude from results
-	OppositeType   string    // The opposite type to search for (DEBIT -> CREDIT, CREDIT -> DEBIT). Empty string means any type.
-	AbsoluteAmount float64   // The absolute amount to match
-	DateLowerBound time.Time // Lower bound of transaction date range
-	DateUpperBound time.Time // Upper bound of transaction date range
-	UserID         int64     // User ID to scope the search
+	ExcludeID       string    // The transaction ID to exclude from results
+	OppositeType    string    // The opposite type to search for (DEBIT -> CREDIT, CREDIT -> DEBIT)
+	AbsoluteAmount  float64   // The absolute amount to match
+	DateLowerBound  time.Time // Lower bound of transaction date range
+	DateUpperBound  time.Time // Upper bound of transaction date range
+	UserID          int64     // User ID to scope the search
 }
 
 // Repository defines the interface for transaction data access
@@ -29,10 +29,6 @@ type Repository interface {
 	// Returns transactions with different ID, opposite type, same absolute amount,
 	// and transaction date within the specified range for the same user
 	FindPotentialDuplicates(ctx context.Context, criteria DuplicateCriteria) ([]*Transaction, error)
-	// FindPotentialDuplicatesForBill finds transactions that could be duplicates related to bills
-	// Returns transactions with different ID, same absolute amount (any type),
-	// and transaction date within the specified range for the same user
-	FindPotentialDuplicatesForBill(ctx context.Context, criteria DuplicateCriteria) ([]*Transaction, error)
 	// SetTransactionTags replaces all tags for a transaction
 	SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error
 	// GetTransactionTags returns all tag IDs for a transaction

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"parsa/internal/domain/bill"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/infrastructure/crypto"
 	"parsa/internal/infrastructure/postgres"
@@ -113,7 +112,6 @@ func runDuplicateCheck(args []string) {
 
 	// Initialize repositories
 	transactionRepo := postgres.NewTransactionRepository(db)
-	billRepo := postgres.NewBillRepository(db)
 
 	// Initialize duplicate check service
 	dupService := transaction.NewDuplicateCheckServiceWithWorkers(transactionRepo, *workers)
@@ -173,21 +171,11 @@ func runDuplicateCheck(args []string) {
 			log.Fatalf("Duplicate check failed: %v", err)
 		}
 		printResult(userIDs[0], result)
-
-		// Run bill duplicate check
-		found, marked := checkBillDuplicates(ctx, userIDs[0], dupService, billRepo)
-		printBillResult(userIDs[0], found, marked)
 	} else {
 		// Multiple users - run concurrently
 		results := dupService.CheckAllUsersTransactions(ctx, userIDs)
 		for uid, result := range results {
 			printResult(uid, result)
-		}
-
-		// Run bill duplicate check for all users
-		for _, uid := range userIDs {
-			found, marked := checkBillDuplicates(ctx, uid, dupService, billRepo)
-			printBillResult(uid, found, marked)
 		}
 	}
 
@@ -196,7 +184,7 @@ func runDuplicateCheck(args []string) {
 }
 
 func printResult(userID int64, result *transaction.DuplicateCheckResult) {
-	fmt.Printf("\n=== User %d (Transaction Duplicates) ===\n", userID)
+	fmt.Printf("\n=== User %d ===\n", userID)
 	fmt.Printf("  Transactions checked: %d\n", result.TransactionsChecked)
 	fmt.Printf("  Duplicates found:     %d\n", result.DuplicatesFound)
 	fmt.Printf("  Duplicates marked:    %d\n", result.DuplicatesMarked)
@@ -211,33 +199,4 @@ func printResult(userID int64, result *transaction.DuplicateCheckResult) {
 			fmt.Printf("    - %s\n", e)
 		}
 	}
-}
-
-func checkBillDuplicates(ctx context.Context, userID int64, dupService *transaction.DuplicateCheckService, billRepo bill.Repository) (found int, marked int) {
-	bills, err := billRepo.ListByUserID(ctx, userID, 1000, 0)
-	if err != nil {
-		log.Printf("Error fetching bills for user %d: %v", userID, err)
-		return 0, 0
-	}
-
-	totalFound := 0
-	totalMarked := 0
-
-	for _, b := range bills {
-		found, marked, err := dupService.CheckBillForDuplicates(ctx, b.AccountID, b.DueDate, b.TotalAmount, userID)
-		if err != nil {
-			log.Printf("Error checking bill duplicates for bill %s: %v", b.ID, err)
-			continue
-		}
-		totalFound += found
-		totalMarked += marked
-	}
-
-	return totalFound, totalMarked
-}
-
-func printBillResult(userID int64, found, marked int) {
-	fmt.Printf("\n=== User %d (Bill Duplicates) ===\n", userID)
-	fmt.Printf("  Duplicates found:  %d\n", found)
-	fmt.Printf("  Duplicates marked: %d\n", marked)
 }
