@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"parsa/internal/domain/account"
-	"parsa/internal/domain/bill"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
@@ -35,7 +34,6 @@ type TransactionSyncService struct {
 	transactionRepo       transaction.Repository
 	creditCardDataRepo    models.CreditCardDataRepository
 	bankRepo              models.BankRepository
-	billRepo              bill.Repository
 	duplicateCheckService *transaction.DuplicateCheckService
 }
 
@@ -48,7 +46,6 @@ func NewTransactionSyncService(
 	transactionRepo transaction.Repository,
 	creditCardDataRepo models.CreditCardDataRepository,
 	bankRepo models.BankRepository,
-	billRepo bill.Repository,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
 		client:                client,
@@ -58,7 +55,6 @@ func NewTransactionSyncService(
 		transactionRepo:       transactionRepo,
 		creditCardDataRepo:    creditCardDataRepo,
 		bankRepo:              bankRepo,
-		billRepo:              billRepo,
 		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 	}
 }
@@ -243,25 +239,12 @@ func (s *TransactionSyncService) processTransaction(
 		}
 	}
 
-	// Run duplicate checks after transaction creation (only for newly created transactions)
+	// Run duplicate check after transaction creation (only for newly created transactions)
+	// Note: Bill duplicate check runs when bills are synced, not here
 	if wasCreated {
-		// Regular duplicate check
 		_, _, err := s.duplicateCheckService.CheckTransactionForDuplicates(ctx, txn, userID)
 		if err != nil {
 			log.Printf("Error checking duplicates for transaction %s: %v", txn.ID, err)
-		}
-
-		// Bill duplicate check - check all bills for this account
-		bills, err := s.billRepo.ListByAccountID(ctx, account.ID, 100, 0)
-		if err != nil {
-			log.Printf("Error fetching bills for account %s: %v", account.ID, err)
-		} else {
-			for _, b := range bills {
-				_, _, err := s.duplicateCheckService.CheckBillForDuplicates(ctx, b.AccountID, b.DueDate, b.TotalAmount, userID)
-				if err != nil {
-					log.Printf("Error checking bill duplicates for bill %s: %v", b.ID, err)
-				}
-			}
 		}
 	}
 

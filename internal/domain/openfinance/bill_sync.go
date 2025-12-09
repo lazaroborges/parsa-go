@@ -7,6 +7,7 @@ import (
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/bill"
+	"parsa/internal/domain/transaction"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
 )
@@ -19,15 +20,20 @@ type BillSyncResult struct {
 	Updated    int
 	Skipped    int // Bills that couldn't be matched to an account
 	Errors     []string
+	// Duplicate check results
+	DuplicatesFound  int
+	DuplicatesMarked int
 }
 
 // BillSyncService handles syncing past due credit card bills from the Open Finance API
 type BillSyncService struct {
-	client         ofclient.ClientInterface
-	userRepo       user.Repository
-	accountService *account.Service
-	accountRepo    account.Repository
-	billRepo       bill.Repository
+	client                ofclient.ClientInterface
+	userRepo              user.Repository
+	accountService        *account.Service
+	accountRepo           account.Repository
+	billRepo              bill.Repository
+	transactionRepo       transaction.Repository
+	duplicateCheckService *transaction.DuplicateCheckService
 }
 
 // NewBillSyncService creates a new bill sync service
@@ -37,13 +43,16 @@ func NewBillSyncService(
 	accountService *account.Service,
 	accountRepo account.Repository,
 	billRepo bill.Repository,
+	transactionRepo transaction.Repository,
 ) *BillSyncService {
 	return &BillSyncService{
-		client:         client,
-		userRepo:       userRepo,
-		accountService: accountService,
-		accountRepo:    accountRepo,
-		billRepo:       billRepo,
+		client:                client,
+		userRepo:              userRepo,
+		accountService:        accountService,
+		accountRepo:           accountRepo,
+		billRepo:              billRepo,
+		transactionRepo:       transactionRepo,
+		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 	}
 }
 
@@ -169,7 +178,7 @@ func (s *BillSyncService) processBill(
 
 	// Check if bill already exists
 	existingBill, err := s.billRepo.GetByID(ctx, apiBill.ID)
-	if err != nil {
+	if err != nil && err != bill.ErrBillNotFound {
 		return fmt.Errorf("failed to check existing bill: %w", err)
 	}
 
@@ -184,7 +193,7 @@ func (s *BillSyncService) processBill(
 	}
 
 	// Upsert bill
-	_, err = s.billRepo.Upsert(ctx, upsertParams)
+	savedBill, err := s.billRepo.Upsert(ctx, upsertParams)
 	if err != nil {
 		return fmt.Errorf("failed to upsert bill: %w", err)
 	}
@@ -193,6 +202,22 @@ func (s *BillSyncService) processBill(
 		result.Created++
 	} else {
 		result.Updated++
+	}
+
+	// Run duplicate check against this bill to find matching transactions
+	// This catches transactions that arrived before the bill
+	found, marked, err := s.duplicateCheckService.CheckBillForDuplicates(
+		ctx,
+		savedBill.AccountID,
+		savedBill.DueDate,
+		savedBill.TotalAmount,
+		userID,
+	)
+	if err != nil {
+		log.Printf("Error checking bill duplicates for bill %s: %v", savedBill.ID, err)
+	} else {
+		result.DuplicatesFound += found
+		result.DuplicatesMarked += marked
 	}
 
 	return nil

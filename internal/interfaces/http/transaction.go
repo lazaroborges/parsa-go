@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"parsa/internal/domain/account"
-	"parsa/internal/domain/bill"
 	"parsa/internal/domain/cousinrule"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/shared/middleware"
@@ -55,16 +54,14 @@ type TransactionHandler struct {
 	transactionRepo       transaction.Repository
 	accountRepo           account.Repository
 	cousinRuleRepo        cousinrule.Repository
-	billRepo              bill.Repository
 	duplicateCheckService *transaction.DuplicateCheckService
 }
 
-func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository, cousinRuleRepo cousinrule.Repository, billRepo bill.Repository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository, cousinRuleRepo cousinrule.Repository) *TransactionHandler {
 	return &TransactionHandler{
 		transactionRepo:       transactionRepo,
 		accountRepo:           accountRepo,
 		cousinRuleRepo:        cousinRuleRepo,
-		billRepo:              billRepo,
 		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 	}
 }
@@ -343,27 +340,12 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Run duplicate checks after transaction creation
+	// Run duplicate check after transaction creation
 	go func() {
 		ctx := context.Background()
-		// Regular duplicate check
 		_, _, err := h.duplicateCheckService.CheckTransactionForDuplicates(ctx, txn, userID)
 		if err != nil {
 			log.Printf("Error checking duplicates for transaction %s: %v", txn.ID, err)
-		}
-
-		// Bill duplicate check - check all bills for this account
-		bills, err := h.billRepo.ListByAccountID(ctx, req.AccountID, 100, 0)
-		if err != nil {
-			log.Printf("Error fetching bills for account %s: %v", req.AccountID, err)
-			return
-		}
-
-		for _, b := range bills {
-			_, _, err := h.duplicateCheckService.CheckBillForDuplicates(ctx, b.AccountID, b.DueDate, b.TotalAmount, userID)
-			if err != nil {
-				log.Printf("Error checking bill duplicates for bill %s: %v", b.ID, err)
-			}
 		}
 	}()
 
@@ -593,29 +575,14 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 			Transaction: &txnResponse,
 		})
 
-		// Run duplicate checks after transaction creation
-		go func(createdTxn *transaction.Transaction, accID string) {
+		// Run duplicate check after transaction creation
+		go func(createdTxn *transaction.Transaction) {
 			ctx := context.Background()
-			// Regular duplicate check
 			_, _, err := h.duplicateCheckService.CheckTransactionForDuplicates(ctx, createdTxn, userID)
 			if err != nil {
 				log.Printf("Error checking duplicates for transaction %s: %v", createdTxn.ID, err)
 			}
-
-			// Bill duplicate check - check all bills for this account
-			bills, err := h.billRepo.ListByAccountID(ctx, accID, 100, 0)
-			if err != nil {
-				log.Printf("Error fetching bills for account %s: %v", accID, err)
-				return
-			}
-
-			for _, b := range bills {
-				_, _, err := h.duplicateCheckService.CheckBillForDuplicates(ctx, b.AccountID, b.DueDate, b.TotalAmount, userID)
-				if err != nil {
-					log.Printf("Error checking bill duplicates for bill %s: %v", b.ID, err)
-				}
-			}
-		}(txn, txReq.AccountID)
+		}(txn)
 	}
 
 	// Determine appropriate HTTP status code
