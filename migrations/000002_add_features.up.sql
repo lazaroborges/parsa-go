@@ -114,9 +114,10 @@ CREATE INDEX idx_user_ck_value_tags_rule_id ON public.user_ck_value_tags USING b
 -- Add description_gk column to cousins
 ALTER TABLE public.cousins ADD COLUMN description_gk boolean DEFAULT false;
 
--- Modify transactions.cousin: change from integer to bigint, remove default, add FK
--- First drop the default, then alter the type, then add the FK
+-- Modify transactions.cousin: change from integer to bigint, remove default, drop NOT NULL, add FK
+-- First drop the default and NOT NULL constraint, then alter the type, then set 0s to NULL, then add FK
 ALTER TABLE public.transactions ALTER COLUMN cousin DROP DEFAULT;
+ALTER TABLE public.transactions ALTER COLUMN cousin DROP NOT NULL;
 ALTER TABLE public.transactions ALTER COLUMN cousin TYPE bigint USING cousin::bigint;
 -- Set existing 0 values to NULL before adding FK
 UPDATE public.transactions SET cousin = NULL WHERE cousin = 0;

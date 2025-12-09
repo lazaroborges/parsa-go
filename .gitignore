@@ -57,7 +57,7 @@ todos.txt
 scripts/
 
 #Working migrations 
-*.sql
+/*.sql
 
 #Dump Directory
 dump/
