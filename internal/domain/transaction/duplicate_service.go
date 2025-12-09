@@ -13,6 +13,9 @@ const (
 	// DuplicateTimeDelta is the time window for finding potential duplicates (24 hours)
 	DuplicateTimeDelta = 24 * time.Hour
 
+	// BillDuplicateTimeDelta is the time window for finding potential duplicates related to bills (120 hours / 5 days)
+	BillDuplicateTimeDelta = 120 * time.Hour
+
 	// DuplicateNote is the note added to transactions marked as potential duplicates
 	DuplicateNote = "Esta transação não será considerada no cálculo de saldos e insights. Possíveis motivos incluem estornos, pagamentos e créditos da fatura do cartão de crédito, etc."
 
@@ -228,6 +231,81 @@ func (s *DuplicateCheckService) CheckTransactionForDuplicates(
 	userID int64,
 ) (duplicatesFound int, duplicatesMarked int, err error) {
 	return s.checkTransactionForDuplicates(ctx, txn, userID)
+}
+
+// CheckBillForDuplicates checks for transactions that could be duplicates related to a bill
+// Uses +/-120 hours from the bill's due date and matches transactions with the same absolute amount (any type)
+func (s *DuplicateCheckService) CheckBillForDuplicates(
+	ctx context.Context,
+	billAccountID string,
+	billDueDate time.Time,
+	billTotalAmount float64,
+	userID int64,
+) (duplicatesFound int, duplicatesMarked int, err error) {
+	// Calculate time bounds based on bill due date +/- 120 hours
+	lowerBound := billDueDate.Add(-BillDuplicateTimeDelta)
+	upperBound := billDueDate.Add(BillDuplicateTimeDelta)
+
+	// Build search criteria (no ExcludeID needed - we're checking all transactions against the bill)
+	criteria := DuplicateCriteria{
+		ExcludeID:      "", // Empty string - we want to check all transactions
+		AbsoluteAmount: math.Abs(billTotalAmount),
+		DateLowerBound: lowerBound,
+		DateUpperBound: upperBound,
+		UserID:         userID,
+	}
+
+	// Find potential duplicates using bill-specific method (no type restriction)
+	duplicates, err := s.repo.FindPotentialDuplicatesForBill(ctx, criteria)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	found := len(duplicates)
+	if found == 0 {
+		return 0, 0, nil
+	}
+
+	marked := 0
+	// Mark duplicates as not considered
+	for _, dup := range duplicates {
+		// Only check transactions for the same account as the bill
+		if dup.AccountID != billAccountID {
+			continue
+		}
+
+		if dup.Manipulated {
+			continue // Skip manipulated transactions
+		}
+
+		// Check if note already contains the duplicate message
+		if dup.Notes != nil {
+			if strings.Contains(*dup.Notes, "Esta transação não será considerada") ||
+				strings.Contains(*dup.Notes, "desconsiderada") {
+				continue // Already marked
+			}
+		}
+
+		// Update the duplicate transaction
+		considered := false
+		newNotes := DuplicateNote
+		if dup.Notes != nil && *dup.Notes != "" {
+			newNotes = *dup.Notes + " " + DuplicateNote
+		}
+
+		_, err := s.repo.Update(ctx, dup.ID, UpdateTransactionParams{
+			Considered: &considered,
+			Notes:      &newNotes,
+		})
+		if err != nil {
+			log.Printf("Failed to mark transaction %s as duplicate for bill: %v", dup.ID, err)
+			continue
+		}
+
+		marked++
+	}
+
+	return found, marked, nil
 }
 
 // CheckBatchForDuplicatesConcurrent processes duplicate checking with a configurable concurrency level
