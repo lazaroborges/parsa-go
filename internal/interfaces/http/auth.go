@@ -623,6 +623,6 @@ func setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400, // 24 hours (matches JWT expiration)
+		MaxAge:   30 * 24 * 60 * 60, // 30 days (matches JWT expiration)
 	})
 }

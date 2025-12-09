@@ -12,6 +12,7 @@ type Transaction struct {
 	Category            *string   `json:"category,omitempty"`
 	OriginalDescription *string   `json:"originalDescription,omitempty"`
 	OriginalCategory    *string   `json:"originalCategory,omitempty"`
+	ProviderCategoryID  *string   `json:"providerCategoryId,omitempty"` // Raw category code from provider (e.g., "01000000")
 	TransactionDate     time.Time `json:"transactionDate"`
 	Type                string    `json:"type"`   // "DEBIT" or "CREDIT"
 	Status              string    `json:"status"` // "PENDING" or "POSTED"
@@ -24,6 +25,7 @@ type Transaction struct {
 	Tags                []string  `json:"tags"`
 	Manipulated         bool      `json:"manipulated"`
 	Notes               *string   `json:"notes,omitempty"`
+	Cousin              *int64    `json:"cousin,omitempty"`
 }
 
 type CreateTransactionParams struct {
@@ -46,6 +48,7 @@ type UpdateTransactionParams struct {
 	Status          *string
 	Considered      *bool
 	Notes           *string
+	Tags            *[]string // nil = don't update, empty slice = clear all tags
 }
 
 // UpsertTransactionParams is used for syncing transactions from the provider
@@ -57,6 +60,7 @@ type UpsertTransactionParams struct {
 	Category            *string
 	OriginalDescription *string
 	OriginalCategory    *string
+	ProviderCategoryID  *string // Raw category code from provider (e.g., "01000000")
 	TransactionDate     time.Time
 	Type                string
 	Status              string

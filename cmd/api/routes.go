@@ -48,6 +48,10 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleListTransactions)))
 	mux.Handle("/api/transactions/update", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleBatchTransactions)))
 	mux.Handle("/api/transactions/{id}", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleGetTransaction)))
+	mux.Handle("/api/tags/", authMiddleware(http.HandlerFunc(deps.TagHandler.HandleTags)))
+	mux.Handle("/api/tags/{id}", authMiddleware(http.HandlerFunc(deps.TagHandler.HandleTagByID)))
+	mux.Handle("/api/cousin-rules/", authMiddleware(http.HandlerFunc(deps.CousinRuleHandler.HandleCousinRules)))
+	mux.Handle("/api/cousin-rules/{id}", authMiddleware(http.HandlerFunc(deps.CousinRuleHandler.HandleCousinRuleByID)))
 
 	// Apply global middleware
 	handler := middleware.Logging(middleware.CORS(cfg.Server.AllowedHosts)(mux))

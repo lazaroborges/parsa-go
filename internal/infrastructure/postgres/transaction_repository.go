@@ -22,11 +22,14 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 		INSERT INTO transactions (id, account_id, amount, description, category, transaction_date, type, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, account_id, amount, description, category, transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at
+		          provider_created_at, provider_updated_at, created_at, updated_at,
+		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
 	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
+	var tags []byte
+	var cousin sql.NullInt64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
@@ -38,6 +41,8 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 		&transaction.Type, &transaction.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&transaction.CreatedAt, &transaction.UpdatedAt,
+		&transaction.Considered, &transaction.IsOpenFinance, &tags, &transaction.Manipulated, &transaction.Notes,
+		&cousin,
 	)
 
 	if providerCreatedAt.Valid {
@@ -45,6 +50,10 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 	}
 	if providerUpdatedAt.Valid {
 		transaction.ProviderUpdatedAt = providerUpdatedAt.Time
+	}
+	transaction.Tags = []string{}
+	if cousin.Valid {
+		transaction.Cousin = &cousin.Int64
 	}
 
 	if err != nil {
@@ -57,9 +66,9 @@ func (r *TransactionRepository) Create(ctx context.Context, params transaction.C
 func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, original_description, original_category,
-		       transaction_date, type, status,
+		       provider_category_id, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at,
-		       considered, is_open_finance, tags, manipulated, notes
+		       considered, is_open_finance, tags, manipulated, notes, cousin
 		FROM transactions
 		WHERE id = $1
 	`
@@ -68,15 +77,17 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 	var tags []byte // PostgreSQL array comes as bytes
 	var originalDescription, originalCategory sql.NullString
+	var cousin sql.NullInt64
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&txn.ID, &txn.AccountID, &txn.Amount,
 		&txn.Description, &txn.Category, &originalDescription, &originalCategory,
-		&txn.TransactionDate,
+		&txn.ProviderCategoryID, &txn.TransactionDate,
 		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&txn.CreatedAt, &txn.UpdatedAt,
 		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
+		&cousin,
 	)
 
 	if providerCreatedAt.Valid {
@@ -93,6 +104,9 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 	}
 	// Tags are null or empty, so just set to empty slice
 	txn.Tags = []string{}
+	if cousin.Valid {
+		txn.Cousin = &cousin.Int64
+	}
 
 	if err == sql.ErrNoRows {
 		return nil, nil // Not found
@@ -107,9 +121,9 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*transa
 func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
 		SELECT id, account_id, amount, description, category, original_description, original_category,
-		       transaction_date, type, status,
+		       provider_category_id, transaction_date, type, status,
 		       provider_created_at, provider_updated_at, created_at, updated_at,
-		       considered, is_open_finance, tags, manipulated, notes
+		       considered, is_open_finance, tags, manipulated, notes, cousin
 		FROM transactions
 		WHERE account_id = $1
 		ORDER BY transaction_date DESC, created_at DESC
@@ -129,9 +143,9 @@ func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID s
 func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
 	query := `
 		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.original_description, t.original_category,
-		       t.transaction_date, t.type, t.status,
+		       t.provider_category_id, t.transaction_date, t.type, t.status,
 		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
-		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes
+		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
 		WHERE a.user_id = $1
@@ -174,15 +188,17 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 		var providerCreatedAt, providerUpdatedAt sql.NullTime
 		var tags []byte
 		var originalDescription, originalCategory sql.NullString
+		var cousin sql.NullInt64
 
 		err := rows.Scan(
 			&txn.ID, &txn.AccountID, &txn.Amount,
 			&txn.Description, &txn.Category, &originalDescription, &originalCategory,
-			&txn.TransactionDate,
+			&txn.ProviderCategoryID, &txn.TransactionDate,
 			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
 			&txn.CreatedAt, &txn.UpdatedAt,
 			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
+			&cousin,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan transaction: %w", err)
@@ -202,6 +218,9 @@ func scanTransactions(rows *sql.Rows) ([]*transaction.Transaction, error) {
 		}
 		// Tags are null or empty, so just set to empty slice
 		txn.Tags = []string{}
+		if cousin.Valid {
+			txn.Cousin = &cousin.Int64
+		}
 
 		transactions = append(transactions, &txn)
 	}
@@ -242,15 +261,16 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $9
 		RETURNING id, account_id, amount, description, category, original_description, original_category,
-		          transaction_date, type, status,
+		          provider_category_id, transaction_date, type, status,
 		          provider_created_at, provider_updated_at, created_at, updated_at,
-		          considered, is_open_finance, tags, manipulated, notes
+		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
 	var txn transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 	var tags []byte
 	var originalDescription, originalCategory sql.NullString
+	var cousin sql.NullInt64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
@@ -259,11 +279,12 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 	).Scan(
 		&txn.ID, &txn.AccountID, &txn.Amount,
 		&txn.Description, &txn.Category, &originalDescription, &originalCategory,
-		&txn.TransactionDate,
+		&txn.ProviderCategoryID, &txn.TransactionDate,
 		&txn.Type, &txn.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&txn.CreatedAt, &txn.UpdatedAt,
 		&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
+		&cousin,
 	)
 
 	if providerCreatedAt.Valid {
@@ -279,6 +300,9 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		txn.OriginalCategory = &originalCategory.String
 	}
 	txn.Tags = []string{}
+	if cousin.Valid {
+		txn.Cousin = &cousin.Int64
+	}
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("transaction not found")
@@ -333,9 +357,9 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $5
 		RETURNING id, account_id, amount, description, category, original_description, original_category,
-		          transaction_date, type, status,
+		          provider_category_id, transaction_date, type, status,
 		          provider_created_at, provider_updated_at, created_at, updated_at,
-		          considered, is_open_finance, tags, manipulated, notes
+		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
 	for _, u := range updates {
@@ -343,6 +367,7 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 		var providerCreatedAt, providerUpdatedAt sql.NullTime
 		var tags []byte
 		var originalDescription, originalCategory sql.NullString
+		var cousin sql.NullInt64
 
 		err := tx.QueryRowContext(
 			ctx, query,
@@ -350,11 +375,12 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 		).Scan(
 			&txn.ID, &txn.AccountID, &txn.Amount,
 			&txn.Description, &txn.Category, &originalDescription, &originalCategory,
-			&txn.TransactionDate,
+			&txn.ProviderCategoryID, &txn.TransactionDate,
 			&txn.Type, &txn.Status,
 			&providerCreatedAt, &providerUpdatedAt,
 			&txn.CreatedAt, &txn.UpdatedAt,
 			&txn.Considered, &txn.IsOpenFinance, &tags, &txn.Manipulated, &txn.Notes,
+			&cousin,
 		)
 
 		if err == sql.ErrNoRows {
@@ -377,6 +403,9 @@ func (r *TransactionRepository) UpdateBatch(ctx context.Context, updates []struc
 			txn.OriginalCategory = &originalCategory.String
 		}
 		txn.Tags = []string{}
+		if cousin.Valid {
+			txn.Cousin = &cousin.Int64
+		}
 
 		results = append(results, &txn)
 	}
@@ -412,14 +441,15 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	query := `
 		INSERT INTO transactions (id, account_id, amount, description, category, original_description, original_category,
-		                          transaction_date, type, status, provider_created_at, provider_updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		                          provider_category_id, transaction_date, type, status, provider_created_at, provider_updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (id) DO UPDATE SET
 		    amount = EXCLUDED.amount,
 		    description = CASE WHEN transactions.manipulated THEN transactions.description ELSE EXCLUDED.description END,
 		    category = CASE WHEN transactions.manipulated THEN transactions.category ELSE EXCLUDED.category END,
 		    original_description = EXCLUDED.original_description,
 		    original_category = EXCLUDED.original_category,
+		    provider_category_id = EXCLUDED.provider_category_id,
 		    transaction_date = EXCLUDED.transaction_date,
 		    type = EXCLUDED.type,
 		    status = CASE WHEN transactions.manipulated THEN transactions.status ELSE EXCLUDED.status END,
@@ -428,27 +458,32 @@ func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.U
 		    provider_updated_at = EXCLUDED.provider_updated_at,
 		    updated_at = CURRENT_TIMESTAMP
 		RETURNING id, account_id, amount, description, category, original_description, original_category,
-		          transaction_date, type, status,
-		          provider_created_at, provider_updated_at, created_at, updated_at
+		          provider_category_id, transaction_date, type, status,
+		          provider_created_at, provider_updated_at, created_at, updated_at,
+		          considered, is_open_finance, tags, manipulated, notes, cousin
 	`
 
 	var transaction transaction.Transaction
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 	var originalDescription, originalCategory sql.NullString
+	var tags []byte
+	var cousin sql.NullInt64
 
 	err := r.db.QueryRowContext(
 		ctx, query,
 		params.ID, params.AccountID, params.Amount, params.Description, params.Category,
-		params.OriginalDescription, params.OriginalCategory,
+		params.OriginalDescription, params.OriginalCategory, params.ProviderCategoryID,
 		params.TransactionDate, params.Type, params.Status,
 		params.ProviderCreatedAt, params.ProviderUpdatedAt,
 	).Scan(
 		&transaction.ID, &transaction.AccountID, &transaction.Amount,
 		&transaction.Description, &transaction.Category, &originalDescription, &originalCategory,
-		&transaction.TransactionDate,
+		&transaction.ProviderCategoryID, &transaction.TransactionDate,
 		&transaction.Type, &transaction.Status,
 		&providerCreatedAt, &providerUpdatedAt,
 		&transaction.CreatedAt, &transaction.UpdatedAt,
+		&transaction.Considered, &transaction.IsOpenFinance, &tags, &transaction.Manipulated, &transaction.Notes,
+		&cousin,
 	)
 
 	if providerCreatedAt.Valid {
@@ -462,6 +497,10 @@ func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.U
 	}
 	if originalCategory.Valid {
 		transaction.OriginalCategory = &originalCategory.String
+	}
+	transaction.Tags = []string{}
+	if cousin.Valid {
+		transaction.Cousin = &cousin.Int64
 	}
 
 	if err != nil {
@@ -479,23 +518,23 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 	}
 
 	// Build the VALUES clause with placeholders
-	// Each transaction has 12 fields
+	// Each transaction has 13 fields
 	valueStrings := make([]string, 0, len(params))
-	valueArgs := make([]any, 0, len(params)*12)
+	valueArgs := make([]any, 0, len(params)*13)
 
 	for i, param := range params {
 		// Calculate placeholder positions for this row
-		offset := i * 12
+		offset := i * 13
 		valueStrings = append(valueStrings, fmt.Sprintf(
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 			offset+1, offset+2, offset+3, offset+4, offset+5,
-			offset+6, offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
+			offset+6, offset+7, offset+8, offset+9, offset+10, offset+11, offset+12, offset+13,
 		))
 
 		// Add values for this row
 		valueArgs = append(valueArgs,
 			param.ID, param.AccountID, param.Amount, param.Description, param.Category,
-			param.OriginalDescription, param.OriginalCategory,
+			param.OriginalDescription, param.OriginalCategory, param.ProviderCategoryID,
 			param.TransactionDate, param.Type, param.Status,
 			param.ProviderCreatedAt, param.ProviderUpdatedAt,
 		)
@@ -503,7 +542,7 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 
 	query := fmt.Sprintf(`
 		INSERT INTO transactions (id, account_id, amount, description, category, original_description, original_category,
-		                          transaction_date, type, status, provider_created_at, provider_updated_at)
+		                          provider_category_id, transaction_date, type, status, provider_created_at, provider_updated_at)
 		VALUES %s
 		ON CONFLICT (id) DO UPDATE SET
 		    amount = EXCLUDED.amount,
@@ -511,6 +550,7 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 		    category = CASE WHEN transactions.manipulated THEN transactions.category ELSE EXCLUDED.category END,
 		    original_description = EXCLUDED.original_description,
 		    original_category = EXCLUDED.original_category,
+		    provider_category_id = EXCLUDED.provider_category_id,
 		    transaction_date = EXCLUDED.transaction_date,
 		    type = EXCLUDED.type,
 		    status = CASE WHEN transactions.manipulated THEN transactions.status ELSE EXCLUDED.status END,
@@ -524,6 +564,7 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 		    (NOT transactions.manipulated AND transactions.category IS DISTINCT FROM EXCLUDED.category) OR
 		    transactions.original_description IS DISTINCT FROM EXCLUDED.original_description OR
 		    transactions.original_category IS DISTINCT FROM EXCLUDED.original_category OR
+		    transactions.provider_category_id IS DISTINCT FROM EXCLUDED.provider_category_id OR
 		    transactions.transaction_date IS DISTINCT FROM EXCLUDED.transaction_date OR
 		    transactions.type IS DISTINCT FROM EXCLUDED.type OR
 		    (NOT transactions.manipulated AND transactions.status IS DISTINCT FROM EXCLUDED.status) OR
@@ -542,4 +583,177 @@ func (r *TransactionRepository) UpsertBatch(ctx context.Context, params []transa
 	}
 
 	return affected, nil
+}
+
+// SetTransactionTags replaces all tags for a transaction
+func (r *TransactionRepository) SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete existing tags
+	_, err = tx.ExecContext(ctx, `DELETE FROM transaction_tags WHERE transaction_id = $1`, transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing tags: %w", err)
+	}
+
+	// Insert new tags
+	if len(tagIDs) > 0 {
+		valueStrings := make([]string, 0, len(tagIDs))
+		valueArgs := make([]any, 0, len(tagIDs)*2)
+
+		for i, tagID := range tagIDs {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
+			valueArgs = append(valueArgs, transactionID, tagID)
+		}
+
+		query := fmt.Sprintf(
+			`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES %s ON CONFLICT DO NOTHING`,
+			strings.Join(valueStrings, ", "),
+		)
+
+		_, err = tx.ExecContext(ctx, query, valueArgs...)
+		if err != nil {
+			return fmt.Errorf("failed to insert tags: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// GetTransactionTags returns all tag IDs for a transaction
+func (r *TransactionRepository) GetTransactionTags(ctx context.Context, transactionID string) ([]string, error) {
+	query := `SELECT tag_id FROM transaction_tags WHERE transaction_id = $1`
+
+	rows, err := r.db.QueryContext(ctx, query, transactionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction tags: %w", err)
+	}
+	defer rows.Close()
+
+	var tagIDs []string
+	for rows.Next() {
+		var tagID string
+		if err := rows.Scan(&tagID); err != nil {
+			return nil, fmt.Errorf("failed to scan tag id: %w", err)
+		}
+		tagIDs = append(tagIDs, tagID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tag ids: %w", err)
+	}
+
+	return tagIDs, nil
+}
+
+// FindPotentialDuplicates finds transactions that could be duplicates based on criteria:
+// - Different ID from the source transaction
+// - Opposite type (DEBIT <-> CREDIT)
+// - Same absolute amount
+// - Transaction date within the specified time range
+// - Same user (through account join)
+// - Not manually manipulated
+func (r *TransactionRepository) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	query := `
+		SELECT t.id, t.account_id, t.amount, t.description, t.category, t.original_description, t.original_category,
+		       t.provider_category_id, t.transaction_date, t.type, t.status,
+		       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
+		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
+		FROM transactions t
+		JOIN accounts a ON t.account_id = a.id
+		WHERE t.id != $1
+		  AND t.type = $2
+		  AND ABS(t.amount) = $3
+		  AND t.transaction_date >= $4
+		  AND t.transaction_date <= $5
+		  AND a.user_id = $6
+		  AND t.manipulated = false
+	`
+
+	rows, err := r.db.QueryContext(ctx, query,
+		criteria.ExcludeID,
+		criteria.OppositeType,
+		criteria.AbsoluteAmount,
+		criteria.DateLowerBound,
+		criteria.DateUpperBound,
+		criteria.UserID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find potential duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}
+
+// FindPotentialDuplicatesForBill finds transactions that could be duplicates related to bills
+// - Same absolute amount (any type)
+// - Transaction date within the specified time range
+// - Same user (through account join)
+// - Not manually manipulated
+// If ExcludeID is empty, checks all transactions (useful for bill-based duplicate detection)
+func (r *TransactionRepository) FindPotentialDuplicatesForBill(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	var query string
+	var args []interface{}
+
+	if criteria.ExcludeID != "" {
+		// Exclude a specific transaction ID
+		query = `
+			SELECT t.id, t.account_id, t.amount, t.description, t.category, t.original_description, t.original_category,
+			       t.provider_category_id, t.transaction_date, t.type, t.status,
+			       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
+			       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
+			FROM transactions t
+			JOIN accounts a ON t.account_id = a.id
+			WHERE t.id != $1
+			  AND ABS(t.amount) = $2
+			  AND t.transaction_date >= $3
+			  AND t.transaction_date <= $4
+			  AND a.user_id = $5
+			  AND t.manipulated = false
+		`
+		args = []interface{}{
+			criteria.ExcludeID,
+			criteria.AbsoluteAmount,
+			criteria.DateLowerBound,
+			criteria.DateUpperBound,
+			criteria.UserID,
+		}
+	} else {
+		// Check all transactions (for bill-based duplicate detection)
+		query = `
+			SELECT t.id, t.account_id, t.amount, t.description, t.category, t.original_description, t.original_category,
+			       t.provider_category_id, t.transaction_date, t.type, t.status,
+			       t.provider_created_at, t.provider_updated_at, t.created_at, t.updated_at,
+			       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
+			FROM transactions t
+			JOIN accounts a ON t.account_id = a.id
+			WHERE ABS(t.amount) = $1
+			  AND t.transaction_date >= $2
+			  AND t.transaction_date <= $3
+			  AND a.user_id = $4
+			  AND t.manipulated = false
+		`
+		args = []interface{}{
+			criteria.AbsoluteAmount,
+			criteria.DateLowerBound,
+			criteria.DateUpperBound,
+			criteria.UserID,
+		}
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find potential duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
 }

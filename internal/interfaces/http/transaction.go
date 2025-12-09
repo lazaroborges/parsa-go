@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/cousinrule"
 	"parsa/internal/domain/transaction"
 	"parsa/internal/shared/middleware"
 
@@ -44,19 +46,23 @@ type TransactionAPIResponse struct {
 	Tags                []string `json:"tags"`
 	Manipulated         bool     `json:"manipulated"`
 	LastUpdateDateParsa string   `json:"lastUpdateDateParsa"`
-	Cousin              *string  `json:"cousin"`
+	Cousin              *int64   `json:"cousin"`
 	DontAskAgain        bool     `json:"dont_ask_again"`
 }
 
 type TransactionHandler struct {
-	transactionRepo transaction.Repository
-	accountRepo     account.Repository
+	transactionRepo       transaction.Repository
+	accountRepo           account.Repository
+	cousinRuleRepo        cousinrule.Repository
+	duplicateCheckService *transaction.DuplicateCheckService
 }
 
-func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository) *TransactionHandler {
+func NewTransactionHandler(transactionRepo transaction.Repository, accountRepo account.Repository, cousinRuleRepo cousinrule.Repository) *TransactionHandler {
 	return &TransactionHandler{
-		transactionRepo: transactionRepo,
-		accountRepo:     accountRepo,
+		transactionRepo:       transactionRepo,
+		accountRepo:           accountRepo,
+		cousinRuleRepo:        cousinRuleRepo,
+		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 	}
 }
 
@@ -77,11 +83,12 @@ type BatchCreateRequest struct {
 
 // PatchTransactionItem represents a single transaction patch with ID
 type PatchTransactionItem struct {
-	ID          string  `json:"id"`
-	Description *string `json:"description,omitempty"`
-	Category    *string `json:"category,omitempty"`
-	Considered  *bool   `json:"considered,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
+	ID          string    `json:"id"`
+	Description *string   `json:"description,omitempty"`
+	Category    *string   `json:"category,omitempty"`
+	Considered  *bool     `json:"considered,omitempty"`
+	Notes       *string   `json:"notes,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"` // nil = don't update, empty = clear all
 }
 
 // BatchPatchRequest wraps multiple transaction patch requests
@@ -157,10 +164,26 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 		previous = &prevURL
 	}
 
-	// Transform transactions to API response format
+	// Fetch tags for each transaction and transform to API response format
 	results := make([]TransactionAPIResponse, 0, len(transactions))
 	for _, txn := range transactions {
-		results = append(results, toTransactionAPIResponse(txn))
+		tags, err := h.transactionRepo.GetTransactionTags(r.Context(), txn.ID)
+		if err != nil {
+			log.Printf("Error getting tags for transaction %s: %v", txn.ID, err)
+			txn.Tags = []string{}
+		} else if tags != nil {
+			txn.Tags = tags
+		} else {
+			txn.Tags = []string{}
+		}
+
+		// Check dont_ask_again status if transaction has a cousin
+		dontAskAgain := false
+		if txn.Cousin != nil && *txn.Cousin != 0 && h.cousinRuleRepo != nil {
+			dontAskAgain, _ = h.cousinRuleRepo.CheckDontAskAgain(r.Context(), userID, *txn.Cousin, txn.Type)
+		}
+
+		results = append(results, toTransactionAPIResponseWithDontAsk(txn, dontAskAgain))
 	}
 
 	response := TransactionListResponse{
@@ -176,6 +199,11 @@ func (h *TransactionHandler) HandleListTransactions(w http.ResponseWriter, r *ht
 
 // toTransactionAPIResponse converts a domain Transaction to the API response format
 func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIResponse {
+	return toTransactionAPIResponseWithDontAsk(txn, false)
+}
+
+// toTransactionAPIResponseWithDontAsk converts a domain Transaction to the API response format with dont_ask_again
+func toTransactionAPIResponseWithDontAsk(txn *transaction.Transaction, dontAskAgain bool) TransactionAPIResponse {
 	// Amount should be absolute value
 	amount := txn.Amount
 	if txn.Type == "DEBIT" {
@@ -192,6 +220,18 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		category = *txn.Category
 	}
 
+	// Return cousin ID as integer pointer (null if nil or 0)
+	var cousin *int64
+	if txn.Cousin != nil && *txn.Cousin != 0 {
+		cousin = txn.Cousin
+	}
+
+	// Use actual tags or empty slice
+	tags := txn.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	return TransactionAPIResponse{
 		ID:                  txn.ID,
 		Description:         txn.Description,
@@ -205,11 +245,11 @@ func toTransactionAPIResponse(txn *transaction.Transaction) TransactionAPIRespon
 		Status:              strings.ToLower(txn.Status),
 		Considered:          txn.Considered,
 		IsOpenFinance:       txn.IsOpenFinance,
-		Tags:                []string{}, // Return empty array for now
+		Tags:                tags,
 		Manipulated:         txn.Manipulated,
 		LastUpdateDateParsa: txn.UpdatedAt.Format(time.RFC3339),
-		Cousin:              nil,   // Return null for now
-		DontAskAgain:        false, // Default false
+		Cousin:              cousin,
+		DontAskAgain:        dontAskAgain,
 	}
 }
 
@@ -299,6 +339,15 @@ func (h *TransactionHandler) HandleCreateTransaction(w http.ResponseWriter, r *h
 		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
 		return
 	}
+
+	// Run duplicate check after transaction creation
+	go func() {
+		ctx := context.Background()
+		_, _, err := h.duplicateCheckService.CheckTransactionForDuplicates(ctx, txn, userID)
+		if err != nil {
+			log.Printf("Error checking duplicates for transaction %s: %v", txn.ID, err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -525,6 +574,15 @@ func (h *TransactionHandler) handleBatchCreate(w http.ResponseWriter, r *http.Re
 			Success:     true,
 			Transaction: &txnResponse,
 		})
+
+		// Run duplicate check after transaction creation
+		go func(createdTxn *transaction.Transaction) {
+			ctx := context.Background()
+			_, _, err := h.duplicateCheckService.CheckTransactionForDuplicates(ctx, createdTxn, userID)
+			if err != nil {
+				log.Printf("Error checking duplicates for transaction %s: %v", createdTxn.ID, err)
+			}
+		}(txn)
 	}
 
 	// Determine appropriate HTTP status code
@@ -635,6 +693,30 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 				Error:   "Failed to update transaction",
 			})
 			continue
+		}
+
+		// Update tags if provided
+		if patchReq.Tags != nil {
+			if err := h.transactionRepo.SetTransactionTags(r.Context(), patchReq.ID, *patchReq.Tags); err != nil {
+				log.Printf("Error setting tags for transaction %s in batch at index %d: %v", patchReq.ID, idx, err)
+				results = append(results, BatchItemResult{
+					Index:   idx,
+					Success: false,
+					Error:   "Failed to update tags",
+				})
+				continue
+			}
+			// Update the Tags field in response
+			updatedTxn.Tags = *patchReq.Tags
+		} else {
+			// Fetch current tags for response
+			tags, err := h.transactionRepo.GetTransactionTags(r.Context(), patchReq.ID)
+			if err != nil {
+				log.Printf("Error getting tags for transaction %s: %v", patchReq.ID, err)
+				updatedTxn.Tags = []string{}
+			} else {
+				updatedTxn.Tags = tags
+			}
 		}
 
 		successCount++

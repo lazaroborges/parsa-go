@@ -225,13 +225,7 @@ Jobs execute concurrently via a worker pool with graceful shutdown support.
 - OAuth 2.0 with CSRF state validation
 - CORS and security headers middleware
 
-## Roadmap
 
-- [ ] Improve Test coverage
-- [ ] Additional OAuth provider (Apple)
-- [ ] Spending analytics
-- [ ] OpenAPI documentation
-- [ ] Integration with Parsa's Proprietary Analytics Engine 
 
 ## License
 

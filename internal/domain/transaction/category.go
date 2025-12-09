@@ -604,6 +604,31 @@ var CategoryMapping = map[string]TransactionCategory{
 	},
 }
 
+// GetCategoryKey returns the category code (Key) from OpenFinanceName or code
+// If category is already a code (8 digits), returns it as-is
+// If category is an OpenFinanceName, performs reverse lookup to find the Key
+// Returns nil if no mapping is found
+func GetCategoryKey(category *string) *string {
+	if category == nil || *category == "" {
+		return nil
+	}
+
+	// If it's already a code (exists as key in mapping), return it
+	if _, ok := CategoryMapping[*category]; ok {
+		return category
+	}
+
+	// Search by OpenFinanceName to find the Key
+	for key, cat := range CategoryMapping {
+		if cat.OpenFinanceName == *category {
+			return &key
+		}
+	}
+
+	// No mapping found
+	return nil
+}
+
 // TranslateCategory translates an OpenFinance category (code or name) to ParsaName
 // It handles two cases:
 // 1. If category is a code (e.g., "01000000"), looks it up directly in CategoryMapping

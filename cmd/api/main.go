@@ -73,7 +73,7 @@ func setupScheduler(deps *Dependencies, cfg *config.Config) (*scheduler.Schedule
 
 		jobs := make([]scheduler.Job, 0, len(users))
 		for _, user := range users {
-			job := scheduler.NewUserSyncJob(user.ID, deps.AccountSyncService, deps.TransactionSyncService)
+			job := scheduler.NewUserSyncJob(user.ID, deps.AccountSyncService, deps.TransactionSyncService, deps.BillSyncService)
 			jobs = append(jobs, job)
 		}
 

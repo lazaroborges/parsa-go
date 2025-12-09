@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/cousinrule"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/infrastructure/crypto"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
+	"parsa/internal/infrastructure/postgres/listener"
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/shared/auth"
 	"parsa/internal/shared/config"
@@ -22,6 +25,8 @@ type Dependencies struct {
 	UserHandler        *httphandlers.UserHandler
 	AccountHandler     *httphandlers.AccountHandler
 	TransactionHandler *httphandlers.TransactionHandler
+	TagHandler         *httphandlers.TagHandler
+	CousinRuleHandler  *httphandlers.CousinRuleHandler
 
 	// Auth
 	JWT *auth.JWT
@@ -29,9 +34,13 @@ type Dependencies struct {
 	// Sync services (for scheduler)
 	AccountSyncService     *openfinance.AccountSyncService
 	TransactionSyncService *openfinance.TransactionSyncService
+	BillSyncService        *openfinance.BillSyncService
 
 	// Repositories (for scheduler job provider)
 	UserRepo *postgres.UserRepository
+
+	// Background listeners
+	CousinListener *listener.CousinListener
 }
 
 // NewDependencies initializes all application dependencies.
@@ -60,10 +69,14 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize domain services
 	accountService := account.NewService(accountRepo)
 
+	// Initialize bill repository
+	billRepo := postgres.NewBillRepository(db)
+
 	// Initialize Open Finance client and sync services
 	ofClient := ofclient.NewClient()
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
 	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -92,9 +105,22 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		}
 	}
 
-	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService)
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
-	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo)
+	tagRepo := postgres.NewTagRepository(db)
+	tagHandler := httphandlers.NewTagHandler(tagRepo)
+
+	// Initialize cousin rule components
+	cousinRuleRepo := postgres.NewCousinRuleRepository(db)
+	cousinRuleService := cousinrule.NewService(cousinRuleRepo, transactionRepo)
+	cousinRuleHandler := httphandlers.NewCousinRuleHandler(cousinRuleService)
+
+	// Initialize transaction handler with cousin rule repo for dont_ask_again lookups
+	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo)
+
+	// Initialize and start cousin notification listener
+	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
+	cousinListener.Start(context.Background())
 
 	return &Dependencies{
 		DB:                     db,
@@ -102,15 +128,24 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		UserHandler:            userHandler,
 		AccountHandler:         accountHandler,
 		TransactionHandler:     transactionHandler,
+		TagHandler:             tagHandler,
+		CousinRuleHandler:      cousinRuleHandler,
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
+		BillSyncService:        billSyncService,
 		UserRepo:               userRepo,
+		CousinListener:         cousinListener,
 	}, nil
 }
 
 // Close releases all resources held by dependencies.
 func (d *Dependencies) Close() {
+	// Stop listeners first
+	if d.CousinListener != nil {
+		d.CousinListener.Stop()
+	}
+
 	if d.DB != nil {
 		d.DB.Close()
 	}

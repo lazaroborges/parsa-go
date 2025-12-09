@@ -15,6 +15,7 @@ const (
 	defaultTimeout   = 180 * time.Second // Increased for large transaction fetches
 	accountsPath     = "/get-accounts"
 	transactionsPath = "/get-transactions"
+	billsPath        = "/get-bills"
 )
 
 // Client handles communication with the Open Finance API
@@ -215,6 +216,126 @@ func (c *TransactionCreditData) GetTotalInstallments() (int, error) {
 	return num, nil
 }
 
+// BillResponse represents the API response for past due credit card bills
+// Endpoint: GET /tools/api/get-bills
+type BillResponse struct {
+	Success   bool        `json:"success"`
+	Data      []Bill      `json:"data"`
+	Count     int         `json:"count"`
+	Filters   BillFilters `json:"filters"`
+	Timestamp string      `json:"timestamp"`
+}
+
+// BillFilters represents the filters applied to the bills query
+type BillFilters struct {
+	AccountID   *string `json:"accountId"`
+	OnlyPastDue bool    `json:"onlyPastDue"`
+}
+
+// Bill represents a past due credit card bill (fatura vencida) from the Open Finance API
+type Bill struct {
+	ID                   string  `json:"id"`
+	AccountID            string  `json:"accountId"`
+	DueDateString        string  `json:"dueDate"`        // Vencimento
+	CloseDateString      *string `json:"closeDate"`      // Fechamento
+	TotalAmountString    string  `json:"totalAmount"`    // Valor total da fatura
+	MinimumPaymentString *string `json:"minimumPayment"` // Pagamento mínimo
+	Status               string  `json:"status"`         // OPEN, CLOSED, OVERDUE, PAID
+	IsOverdue            bool    `json:"isOverdue"`      // Always true from get-bills endpoint
+	// Account context from API
+	AccountName    string `json:"account_name"`
+	AccountType    string `json:"account_type"`
+	AccountSubtype string `json:"account_subtype"`
+	ItemBankName   string `json:"item_bank_name"`
+	// Timestamps
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// GetTotalAmount returns the total amount as a float64
+func (b *Bill) GetTotalAmount() (float64, error) {
+	if b.TotalAmountString == "" {
+		return 0, nil
+	}
+	amount, err := strconv.ParseFloat(b.TotalAmountString, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse totalAmount '%s': %w", b.TotalAmountString, err)
+	}
+	return amount, nil
+}
+
+// GetMinimumPayment returns the minimum payment as a float64
+func (b *Bill) GetMinimumPayment() (*float64, error) {
+	if b.MinimumPaymentString == nil || *b.MinimumPaymentString == "" {
+		return nil, nil
+	}
+	amount, err := strconv.ParseFloat(*b.MinimumPaymentString, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse minimumPayment '%s': %w", *b.MinimumPaymentString, err)
+	}
+	return &amount, nil
+}
+
+// GetDueDate parses and returns the due date
+func (b *Bill) GetDueDate() (*time.Time, error) {
+	if b.DueDateString == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, b.DueDateString)
+	if err != nil {
+		parsed, err = time.Parse("2006-01-02", b.DueDateString)
+		if err != nil {
+			parsed, err = time.Parse("2006-01-02 15:04:05", b.DueDateString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse dueDate '%s': %w", b.DueDateString, err)
+			}
+		}
+	}
+	return &parsed, nil
+}
+
+// GetCloseDate parses and returns the close date if present
+func (b *Bill) GetCloseDate() (*time.Time, error) {
+	if b.CloseDateString == nil || *b.CloseDateString == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, *b.CloseDateString)
+	if err != nil {
+		parsed, err = time.Parse("2006-01-02", *b.CloseDateString)
+		if err != nil {
+			parsed, err = time.Parse("2006-01-02 15:04:05", *b.CloseDateString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse closeDate '%s': %w", *b.CloseDateString, err)
+			}
+		}
+	}
+	return &parsed, nil
+}
+
+// GetCreatedAt parses and returns the createdAt timestamp
+func (b *Bill) GetCreatedAt() (*time.Time, error) {
+	if b.CreatedAt == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, b.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse createdAt '%s': %w", b.CreatedAt, err)
+	}
+	return &t, nil
+}
+
+// GetUpdatedAt parses and returns the updatedAt timestamp
+func (b *Bill) GetUpdatedAt() (*time.Time, error) {
+	if b.UpdatedAt == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, b.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updatedAt '%s': %w", b.UpdatedAt, err)
+	}
+	return &t, nil
+}
+
 // ErrorResponse represents an error response from the API
 type ErrorResponse struct {
 	Success bool   `json:"success"`
@@ -315,4 +436,47 @@ func (c *Client) GetTransactions(ctx context.Context, apiKey string) (*Transacti
 	}
 
 	return &txResp, nil
+}
+
+// GetBills fetches all bills for a user using their API key
+func (c *Client) GetBills(ctx context.Context, apiKey string) (*BillResponse, error) {
+	url := c.baseURL + billsPath
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp ErrorResponse
+		if err := json.Unmarshal(body, &errResp); err != nil {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+		return nil, fmt.Errorf("API error (status %d): %s - %s", resp.StatusCode, errResp.Error, errResp.Message)
+	}
+
+	var billResp BillResponse
+	if err := json.Unmarshal(body, &billResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !billResp.Success {
+		return nil, fmt.Errorf("API returned success=false")
+	}
+
+	return &billResp, nil
 }
