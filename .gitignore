@@ -55,6 +55,13 @@ accounts.json
 openfinanceproviderapi.json
 todos.txt
 scripts/
+rule.txt
+
+#Database
+db.sqlite3
+
+#only sql files in the root folder 
+*.sql
 
 #Working migrations 
 /*.sql

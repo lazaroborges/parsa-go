@@ -186,6 +186,96 @@ func (r *AccountRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Update updates specific fields of an account
+func (r *AccountRepository) Update(ctx context.Context, id string, params account.UpdateParams) (*account.Account, error) {
+	query := `
+		UPDATE accounts
+		SET name = COALESCE($1, name),
+		    account_type = COALESCE($2, account_type),
+		    balance = COALESCE($3, balance),
+		    "order" = COALESCE($4, "order"),
+		    hidden_by_user = COALESCE($5, hidden_by_user),
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $6
+		RETURNING id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		          provider_updated_at, provider_created_at, created_at, updated_at,
+		          initial_balance, is_open_finance_account, closed_at, "order", description,
+		          removed, hidden_by_user
+	`
+
+	// Convert pointer params to sql.Null* types
+	var name, accountType sql.NullString
+	var balance sql.NullFloat64
+	var order sql.NullInt64
+	var hiddenByUser sql.NullBool
+
+	if params.Name != nil {
+		name = sql.NullString{String: *params.Name, Valid: true}
+	}
+	if params.AccountType != nil {
+		accountType = sql.NullString{String: *params.AccountType, Valid: true}
+	}
+	if params.Balance != nil {
+		balance = sql.NullFloat64{Float64: *params.Balance, Valid: true}
+	}
+	if params.Order != nil {
+		order = sql.NullInt64{Int64: int64(*params.Order), Valid: true}
+	}
+	if params.HiddenByUser != nil {
+		hiddenByUser = sql.NullBool{Bool: *params.HiddenByUser, Valid: true}
+	}
+
+	var acc account.Account
+	var itemID, subtype sql.NullString
+	var bankID sql.NullInt64
+	var providerUpdatedAt, providerCreatedAt sql.NullTime
+	var closedAt sql.NullTime
+	var description sql.NullString
+
+	err := r.db.QueryRowContext(
+		ctx, query,
+		name, accountType, balance, order, hiddenByUser, id,
+	).Scan(
+		&acc.ID, &acc.UserID, &itemID, &acc.Name,
+		&acc.AccountType, &subtype, &acc.Currency, &acc.Balance,
+		&bankID, &providerUpdatedAt, &providerCreatedAt,
+		&acc.CreatedAt, &acc.UpdatedAt,
+		&acc.InitialBalance, &acc.IsOpenFinanceAccount, &closedAt,
+		&acc.UIOrder, &description, &acc.Removed, &acc.HiddenByUser,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, account.ErrAccountNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to update account: %w", err)
+	}
+
+	if itemID.Valid {
+		acc.ItemID = itemID.String
+	}
+	if subtype.Valid {
+		acc.Subtype = subtype.String
+	}
+	if bankID.Valid {
+		acc.BankID = bankID.Int64
+	}
+	if providerUpdatedAt.Valid {
+		acc.ProviderUpdatedAt = providerUpdatedAt.Time
+	}
+	if providerCreatedAt.Valid {
+		acc.ProviderCreatedAt = providerCreatedAt.Time
+	}
+	if closedAt.Valid {
+		acc.ClosedAt = closedAt.Time
+	}
+	if description.Valid {
+		acc.Description = description.String
+	}
+
+	return &acc, nil
+}
+
 // Upsert creates or updates an account based on its ID
 func (r *AccountRepository) Upsert(ctx context.Context, params account.UpsertParams) (*account.Account, error) {
 	query := `

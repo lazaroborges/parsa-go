@@ -20,6 +20,9 @@ type Repository interface {
 	// Delete removes an account
 	Delete(ctx context.Context, id string) error
 
+	// Update updates specific fields of an account
+	Update(ctx context.Context, id string, params UpdateParams) (*Account, error)
+
 	// Upsert creates or updates an account based on its ID
 	Upsert(ctx context.Context, params UpsertParams) (*Account, error)
 
