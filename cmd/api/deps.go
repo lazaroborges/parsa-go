@@ -75,8 +75,8 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize Open Finance client and sync services
 	ofClient := ofclient.NewClient()
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
-	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, billRepo)
-	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo)
+	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo)
+	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
@@ -116,7 +116,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	cousinRuleHandler := httphandlers.NewCousinRuleHandler(cousinRuleService)
 
 	// Initialize transaction handler with cousin rule repo for dont_ask_again lookups
-	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo, billRepo)
+	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo)
 
 	// Initialize and start cousin notification listener
 	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
