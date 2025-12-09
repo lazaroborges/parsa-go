@@ -203,6 +203,28 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 		          removed, hidden_by_user
 	`
 
+	// Convert pointer params to sql.Null* types
+	var name, accountType sql.NullString
+	var balance sql.NullFloat64
+	var order sql.NullInt64
+	var hiddenByUser sql.NullBool
+
+	if params.Name != nil {
+		name = sql.NullString{String: *params.Name, Valid: true}
+	}
+	if params.AccountType != nil {
+		accountType = sql.NullString{String: *params.AccountType, Valid: true}
+	}
+	if params.Balance != nil {
+		balance = sql.NullFloat64{Float64: *params.Balance, Valid: true}
+	}
+	if params.Order != nil {
+		order = sql.NullInt64{Int64: int64(*params.Order), Valid: true}
+	}
+	if params.HiddenByUser != nil {
+		hiddenByUser = sql.NullBool{Bool: *params.HiddenByUser, Valid: true}
+	}
+
 	var acc account.Account
 	var itemID, subtype sql.NullString
 	var bankID sql.NullInt64
@@ -212,7 +234,7 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.Name, params.AccountType, params.Balance, params.Order, params.HiddenByUser, id,
+		name, accountType, balance, order, hiddenByUser, id,
 	).Scan(
 		&acc.ID, &acc.UserID, &itemID, &acc.Name,
 		&acc.AccountType, &subtype, &acc.Currency, &acc.Balance,

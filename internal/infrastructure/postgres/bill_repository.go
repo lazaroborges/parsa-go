@@ -175,12 +175,23 @@ func (r *BillRepository) Update(ctx context.Context, id string, params bill.Upda
 		          provider_created_at, provider_updated_at, created_at, updated_at, is_open_finance
 	`
 
+	// Convert pointer params to sql.Null* types
+	var dueDate sql.NullTime
+	var totalAmount sql.NullFloat64
+
+	if params.DueDate != nil {
+		dueDate = sql.NullTime{Time: *params.DueDate, Valid: true}
+	}
+	if params.TotalAmount != nil {
+		totalAmount = sql.NullFloat64{Float64: *params.TotalAmount, Valid: true}
+	}
+
 	var b bill.Bill
 	var providerCreatedAt, providerUpdatedAt sql.NullTime
 
 	err := r.db.QueryRowContext(
 		ctx, query,
-		params.DueDate, params.TotalAmount, id,
+		dueDate, totalAmount, id,
 	).Scan(
 		&b.ID, &b.AccountID, &b.DueDate, &b.TotalAmount,
 		&providerCreatedAt, &providerUpdatedAt, &b.CreatedAt, &b.UpdatedAt, &b.IsOpenFinance,
