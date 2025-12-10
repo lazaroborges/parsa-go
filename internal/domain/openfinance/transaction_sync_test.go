@@ -17,9 +17,15 @@ type MockTransactionRepo struct {
 	CreateFunc          func(ctx context.Context, params transaction.CreateTransactionParams) (*transaction.Transaction, error)
 	GetByIDFunc         func(ctx context.Context, id string) (*transaction.Transaction, error)
 	ListByAccountIDFunc func(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error)
+	ListByUserIDFunc    func(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error)
+	CountByUserIDFunc   func(ctx context.Context, userID int64) (int64, error)
 	UpdateFunc          func(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error)
 	DeleteFunc          func(ctx context.Context, id string) error
 	UpsertFunc          func(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error)
+	FindPotentialDuplicatesFunc func(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error)
+	FindPotentialDuplicatesForBillFunc func(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error)
+	SetTransactionTagsFunc func(ctx context.Context, transactionID string, tagIDs []string) error
+	GetTransactionTagsFunc func(ctx context.Context, transactionID string) ([]string, error)
 }
 
 func (m *MockTransactionRepo) Create(ctx context.Context, params transaction.CreateTransactionParams) (*transaction.Transaction, error) {
@@ -34,6 +40,18 @@ func (m *MockTransactionRepo) GetByID(ctx context.Context, id string) (*transact
 func (m *MockTransactionRepo) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
+func (m *MockTransactionRepo) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
+	if m.ListByUserIDFunc != nil {
+		return m.ListByUserIDFunc(ctx, userID, limit, offset)
+	}
+	return nil, nil
+}
+func (m *MockTransactionRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+	if m.CountByUserIDFunc != nil {
+		return m.CountByUserIDFunc(ctx, userID)
+	}
+	return 0, nil
+}
 func (m *MockTransactionRepo) Update(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error) {
 	return nil, nil
 }
@@ -41,6 +59,30 @@ func (m *MockTransactionRepo) Delete(ctx context.Context, id string) error { ret
 func (m *MockTransactionRepo) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	if m.UpsertFunc != nil {
 		return m.UpsertFunc(ctx, params)
+	}
+	return nil, nil
+}
+func (m *MockTransactionRepo) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	if m.FindPotentialDuplicatesFunc != nil {
+		return m.FindPotentialDuplicatesFunc(ctx, criteria)
+	}
+	return nil, nil
+}
+func (m *MockTransactionRepo) FindPotentialDuplicatesForBill(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	if m.FindPotentialDuplicatesForBillFunc != nil {
+		return m.FindPotentialDuplicatesForBillFunc(ctx, criteria)
+	}
+	return nil, nil
+}
+func (m *MockTransactionRepo) SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error {
+	if m.SetTransactionTagsFunc != nil {
+		return m.SetTransactionTagsFunc(ctx, transactionID, tagIDs)
+	}
+	return nil
+}
+func (m *MockTransactionRepo) GetTransactionTags(ctx context.Context, transactionID string) ([]string, error) {
+	if m.GetTransactionTagsFunc != nil {
+		return m.GetTransactionTagsFunc(ctx, transactionID)
 	}
 	return nil, nil
 }
@@ -97,7 +139,7 @@ func TestSyncUserTransactions(t *testing.T) {
 			},
 			mockClient: func() *MockClient {
 				return &MockClient{
-					GetTransactionsFunc: func(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error) {
+					GetTransactionsFunc: func(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error) {
 						return &ofclient.TransactionResponse{
 							Success: true,
 							Data: []ofclient.Transaction{
@@ -161,7 +203,7 @@ func TestSyncUserTransactions(t *testing.T) {
 			},
 			mockClient: func() *MockClient {
 				return &MockClient{
-					GetTransactionsFunc: func(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error) {
+					GetTransactionsFunc: func(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error) {
 						return &ofclient.TransactionResponse{
 							Success: true,
 							Data: []ofclient.Transaction{
@@ -208,9 +250,10 @@ func TestSyncUserTransactions(t *testing.T) {
 				tt.mockTxRepo(),
 				tt.mockCC(),
 				tt.mockBank(),
+				"2023-01-01", // Default test start date
 			)
 
-			got, err := svc.SyncUserTransactions(ctx, tt.userID)
+			got, err := svc.SyncUserTransactions(ctx, tt.userID, false)
 
 			if tt.wantErr {
 				if err == nil {

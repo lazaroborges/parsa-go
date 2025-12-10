@@ -16,6 +16,7 @@ type Config struct {
 	Encryption EncryptionConfig
 	Scheduler  SchedulerConfig
 	TLS        TLSConfig
+	OpenFinance OpenFinanceConfig
 }
 
 type ServerConfig struct {
@@ -75,6 +76,10 @@ type TLSConfig struct {
 	CertPath     string
 	KeyPath      string
 	RedirectHTTP bool
+}
+
+type OpenFinanceConfig struct {
+	TransactionSyncStartDate string
 }
 
 func Load() (*Config, error) {
@@ -183,6 +188,9 @@ func Load() (*Config, error) {
 			CertPath:     tlsCertPath,
 			KeyPath:      tlsKeyPath,
 			RedirectHTTP: tlsRedirectHTTP,
+		},
+		OpenFinance: OpenFinanceConfig{
+			TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
 		},
 	}
 

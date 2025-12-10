@@ -11,11 +11,10 @@ import (
 )
 
 const (
-	baseURL          = "https://www.pierre.finance/tools/api"
-	defaultTimeout   = 180 * time.Second // Increased for large transaction fetches
-	accountsPath     = "/get-accounts"
-	transactionsPath = "/get-transactions?format=raw&startDate=2024-01-01"
-	billsPath        = "/get-bills"
+	baseURL        = "https://www.pierre.finance/tools/api"
+	defaultTimeout = 180 * time.Second // Increased for large transaction fetches
+	accountsPath   = "/get-accounts"
+	billsPath      = "/get-bills"
 )
 
 // Client handles communication with the Open Finance API
@@ -393,9 +392,10 @@ func (c *Client) GetAccounts(ctx context.Context, apiKey string) (*AccountRespon
 	return resp, err
 }
 
-// GetTransactions fetches all transactions for a user using their API key
-func (c *Client) GetTransactions(ctx context.Context, apiKey string) (*TransactionResponse, error) {
-	url := c.baseURL + transactionsPath
+// GetTransactions fetches all transactions for a user using their API key.
+// startDate should be in YYYY-MM-DD format (e.g., "2024-01-01").
+func (c *Client) GetTransactions(ctx context.Context, apiKey string, startDate string) (*TransactionResponse, error) {
+	url := fmt.Sprintf("%s/get-transactions?format=raw&startDate=%s", c.baseURL, startDate)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

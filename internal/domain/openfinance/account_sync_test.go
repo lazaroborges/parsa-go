@@ -13,7 +13,7 @@ import (
 // MockClient implements ofclient.ClientInterface
 type MockClient struct {
 	GetAccountsFunc     func(ctx context.Context, apiKey string) (*ofclient.AccountResponse, error)
-	GetTransactionsFunc func(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error)
+	GetTransactionsFunc func(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error)
 }
 
 func (m *MockClient) GetAccounts(ctx context.Context, apiKey string) (*ofclient.AccountResponse, error) {
@@ -23,11 +23,23 @@ func (m *MockClient) GetAccounts(ctx context.Context, apiKey string) (*ofclient.
 	return &ofclient.AccountResponse{Success: true, Data: []ofclient.Account{}}, nil
 }
 
-func (m *MockClient) GetTransactions(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error) {
+func (m *MockClient) GetTransactions(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error) {
 	if m.GetTransactionsFunc != nil {
-		return m.GetTransactionsFunc(ctx, apiKey)
+		return m.GetTransactionsFunc(ctx, apiKey, startDate)
 	}
 	return &ofclient.TransactionResponse{Success: true, Data: []ofclient.Transaction{}}, nil
+}
+
+func (m *MockClient) GetAccountsWithStatus(ctx context.Context, apiKey string) (*ofclient.AccountResponse, int, error) {
+	resp, err := m.GetAccounts(ctx, apiKey)
+	if err != nil {
+		return nil, 500, err
+	}
+	return resp, 200, nil
+}
+
+func (m *MockClient) GetBills(ctx context.Context, apiKey string) (*ofclient.BillResponse, error) {
+	return &ofclient.BillResponse{Success: true, Data: []ofclient.Bill{}}, nil
 }
 
 // MockItemRepo implements models.ItemRepository
@@ -94,6 +106,7 @@ type MockAccountRepo struct {
 	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*account.Account, error)
 	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
 	DeleteFunc                 func(ctx context.Context, id string) error
+	UpdateFunc                 func(ctx context.Context, id string, params account.UpdateParams) (*account.Account, error)
 	UpsertFunc                 func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
 	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
@@ -121,6 +134,12 @@ func (m *MockAccountRepo) ListByUserID(ctx context.Context, userID int64) ([]*ac
 	return nil, nil
 }
 func (m *MockAccountRepo) Delete(ctx context.Context, id string) error { return nil }
+func (m *MockAccountRepo) Update(ctx context.Context, id string, params account.UpdateParams) (*account.Account, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, id, params)
+	}
+	return nil, nil
+}
 func (m *MockAccountRepo) Upsert(ctx context.Context, params account.UpsertParams) (*account.Account, error) {
 	if m.UpsertFunc != nil {
 		return m.UpsertFunc(ctx, params)
