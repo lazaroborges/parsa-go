@@ -231,7 +231,6 @@ func (l *CousinListener) applyRuleToTransaction(ctx context.Context, transaction
 	argIndex := 1
 
 	if rule.Category != nil {
-		query += `, original_category = COALESCE(original_category, category)`
 		query += `, category = $` + itoa(argIndex)
 		args = append(args, *rule.Category)
 		argIndex++

@@ -10,9 +10,8 @@ type Transaction struct {
 	Amount              float64   `json:"amount"`
 	Description         string    `json:"description"`
 	Category            *string   `json:"category,omitempty"`
-	OriginalDescription *string   `json:"originalDescription,omitempty"`
-	OriginalCategory    *string   `json:"originalCategory,omitempty"`
-	ProviderCategoryID  *string   `json:"providerCategoryId,omitempty"` // Raw category code from provider (e.g., "01000000")
+	OriginalDescription *string   `json:"originalDescription,omitempty"` // Set only when user changes description via API
+	ProviderCategoryID  *string   `json:"providerCategoryId,omitempty"`  // Raw category code from provider (e.g., "01000000")
 	TransactionDate     time.Time `json:"transactionDate"`
 	Type                string    `json:"type"`   // "DEBIT" or "CREDIT"
 	Status              string    `json:"status"` // "PENDING" or "POSTED"
@@ -53,17 +52,15 @@ type UpdateTransactionParams struct {
 
 // UpsertTransactionParams is used for syncing transactions from the provider
 type UpsertTransactionParams struct {
-	ID                  string // Provider's transaction id (used as PK)
-	AccountID           string
-	Amount              float64
-	Description         string
-	Category            *string
-	OriginalDescription *string
-	OriginalCategory    *string
-	ProviderCategoryID  *string // Raw category code from provider (e.g., "01000000")
-	TransactionDate     time.Time
-	Type                string
-	Status              string
-	ProviderCreatedAt   *time.Time
-	ProviderUpdatedAt   *time.Time
+	ID                 string // Provider's transaction id (used as PK)
+	AccountID          string
+	Amount             float64
+	Description        string
+	Category           *string
+	ProviderCategoryID *string // Raw category code from provider (e.g., "01000000")
+	TransactionDate    time.Time
+	Type               string
+	Status             string
+	ProviderCreatedAt  *time.Time
+	ProviderUpdatedAt  *time.Time
 }
