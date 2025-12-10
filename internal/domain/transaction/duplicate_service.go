@@ -189,10 +189,6 @@ func (s *DuplicateCheckService) checkTransactionForDuplicates(
 
 	// Mark duplicates as not considered
 	for _, dup := range duplicates {
-		if dup.Manipulated {
-			continue // Skip manipulated transactions
-		}
-
 		// Check if note already contains the duplicate message
 		if dup.Notes != nil {
 			if strings.Contains(*dup.Notes, "Esta transação não será considerada") ||
@@ -272,10 +268,6 @@ func (s *DuplicateCheckService) CheckBillForDuplicates(
 		// Only check transactions for the same account as the bill
 		if dup.AccountID != billAccountID {
 			continue
-		}
-
-		if dup.Manipulated {
-			continue // Skip manipulated transactions
 		}
 
 		// Check if note already contains the duplicate message
