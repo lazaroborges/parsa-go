@@ -36,6 +36,7 @@ type TransactionSyncService struct {
 	creditCardDataRepo    models.CreditCardDataRepository
 	bankRepo              models.BankRepository
 	duplicateCheckService *transaction.DuplicateCheckService
+	fullHistoryStartDate  string
 }
 
 // NewTransactionSyncService creates a new transaction sync service
@@ -47,6 +48,7 @@ func NewTransactionSyncService(
 	transactionRepo transaction.Repository,
 	creditCardDataRepo models.CreditCardDataRepository,
 	bankRepo models.BankRepository,
+	fullHistoryStartDate string,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
 		client:                client,
@@ -57,11 +59,12 @@ func NewTransactionSyncService(
 		creditCardDataRepo:    creditCardDataRepo,
 		bankRepo:              bankRepo,
 		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
+		fullHistoryStartDate:  fullHistoryStartDate,
 	}
 }
 
 // SyncUserTransactions syncs all transactions for a specific user.
-// If hasNewAccounts is true, fetches full history from 2024-01-01.
+// If hasNewAccounts is true, fetches full history from the configured start date.
 // Otherwise, fetches only the last 7 days for incremental sync.
 func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userID int64, hasNewAccounts bool) (*TransactionSyncResult, error) {
 	result := &TransactionSyncResult{
@@ -82,7 +85,7 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 	// Determine start date based on whether new accounts were created
 	var startDate string
 	if hasNewAccounts {
-		startDate = "2024-01-01"
+		startDate = s.fullHistoryStartDate
 		log.Printf("User %d: New accounts detected, fetching full transaction history from %s", userID, startDate)
 	} else {
 		startDate = time.Now().AddDate(0, 0, -7).Format("2006-01-02")
