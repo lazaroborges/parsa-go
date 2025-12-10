@@ -14,7 +14,7 @@ const (
 	baseURL          = "https://www.pierre.finance/tools/api"
 	defaultTimeout   = 180 * time.Second // Increased for large transaction fetches
 	accountsPath     = "/get-accounts"
-	transactionsPath = "/get-transactions"
+	transactionsPath = "/get-transactions?format=raw&startDate=2024-01-01"
 	billsPath        = "/get-bills"
 )
 
