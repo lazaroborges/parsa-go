@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/transaction"
@@ -59,8 +60,10 @@ func NewTransactionSyncService(
 	}
 }
 
-// SyncUserTransactions syncs all transactions for a specific user
-func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userID int64) (*TransactionSyncResult, error) {
+// SyncUserTransactions syncs all transactions for a specific user.
+// If hasNewAccounts is true, fetches full history from 2024-01-01.
+// Otherwise, fetches only the last 7 days for incremental sync.
+func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userID int64, hasNewAccounts bool) (*TransactionSyncResult, error) {
 	result := &TransactionSyncResult{
 		UserID: userID,
 		Errors: []string{},
@@ -76,8 +79,18 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		return nil, fmt.Errorf("user has no provider API key configured")
 	}
 
+	// Determine start date based on whether new accounts were created
+	var startDate string
+	if hasNewAccounts {
+		startDate = "2024-01-01"
+		log.Printf("User %d: New accounts detected, fetching full transaction history from %s", userID, startDate)
+	} else {
+		startDate = time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+		log.Printf("User %d: Incremental sync, fetching transactions from %s", userID, startDate)
+	}
+
 	// Fetch transactions from provider
-	txResp, err := s.client.GetTransactions(ctx, *user.ProviderKey)
+	txResp, err := s.client.GetTransactions(ctx, *user.ProviderKey, startDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch transactions from provider: %w", err)
 	}
@@ -303,7 +316,8 @@ func (s *TransactionSyncService) processCreditCardData(
 	return nil
 }
 
-// SyncAllUsersTransactions syncs transactions for all users with provider keys
+// SyncAllUsersTransactions syncs transactions for all users with provider keys.
+// Uses incremental sync (last 7 days) for all users when called in batch.
 func (s *TransactionSyncService) SyncAllUsersTransactions(ctx context.Context) ([]*TransactionSyncResult, error) {
 	users, err := s.userRepo.ListUsersWithProviderKey(ctx)
 	if err != nil {
@@ -312,7 +326,7 @@ func (s *TransactionSyncService) SyncAllUsersTransactions(ctx context.Context) (
 
 	var results []*TransactionSyncResult
 	for _, user := range users {
-		result, err := s.SyncUserTransactions(ctx, user.ID)
+		result, err := s.SyncUserTransactions(ctx, user.ID, false)
 		if err != nil {
 			log.Printf("Failed to sync transactions for user %d: %v", user.ID, err)
 			results = append(results, &TransactionSyncResult{

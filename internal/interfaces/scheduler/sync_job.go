@@ -76,19 +76,33 @@ func NewUserSyncJob(userID int64, accountSyncService *openfinance.AccountSyncSer
 	}
 }
 
-// Execute runs account sync first, then transaction sync, then bill sync on success
+// Execute runs account sync first, then transaction sync, then bill sync on success.
+// Transaction sync uses full history if new accounts were created, otherwise last 7 days.
 func (j *UserSyncJob) Execute(ctx context.Context) error {
+	log.Printf("Starting full sync for user %d", j.userID)
+
 	// Run account sync first
-	accountJob := NewAccountSyncJob(j.userID, j.accountSyncService)
-	if err := accountJob.Execute(ctx); err != nil {
+	accountResult, err := j.accountSyncService.SyncUserAccounts(ctx, j.userID)
+	if err != nil {
+		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("account sync failed, skipping transaction sync: %w", err)
 	}
 
-	// Only run transaction sync if account sync succeeded
-	txJob := NewTransactionSyncJob(j.userID, j.txSyncService)
-	if err := txJob.Execute(ctx); err != nil {
+	log.Printf("Account sync for user %d: Created=%d, Updated=%d, Errors=%d",
+		j.userID, accountResult.Created, accountResult.Updated, len(accountResult.Errors))
+
+	// Determine if new accounts were created
+	hasNewAccounts := accountResult.Created > 0
+
+	// Run transaction sync with appropriate date range
+	txResult, err := j.txSyncService.SyncUserTransactions(ctx, j.userID, hasNewAccounts)
+	if err != nil {
+		log.Printf("Transaction sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("transaction sync failed: %w", err)
 	}
+
+	log.Printf("Transaction sync for user %d: Created=%d, Updated=%d, Skipped=%d, Errors=%d",
+		j.userID, txResult.Created, txResult.Updated, txResult.Skipped, len(txResult.Errors))
 
 	// Run bill sync after transaction sync
 	billJob := NewBillSyncJob(j.userID, j.billSyncService)
@@ -123,11 +137,13 @@ func NewTransactionSyncJob(userID int64, syncService *openfinance.TransactionSyn
 	}
 }
 
-// Execute runs the transaction sync job
+// Execute runs the transaction sync job.
+// When run standalone, uses incremental sync (last 7 days).
 func (j *TransactionSyncJob) Execute(ctx context.Context) error {
 	log.Printf("Starting transaction sync for user %d", j.userID)
 
-	result, err := j.syncService.SyncUserTransactions(ctx, j.userID)
+	// Standalone execution uses incremental sync
+	result, err := j.syncService.SyncUserTransactions(ctx, j.userID, false)
 	if err != nil {
 		log.Printf("Transaction sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)

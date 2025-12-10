@@ -97,7 +97,7 @@ func TestSyncUserTransactions(t *testing.T) {
 			},
 			mockClient: func() *MockClient {
 				return &MockClient{
-					GetTransactionsFunc: func(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error) {
+					GetTransactionsFunc: func(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error) {
 						return &ofclient.TransactionResponse{
 							Success: true,
 							Data: []ofclient.Transaction{
@@ -161,7 +161,7 @@ func TestSyncUserTransactions(t *testing.T) {
 			},
 			mockClient: func() *MockClient {
 				return &MockClient{
-					GetTransactionsFunc: func(ctx context.Context, apiKey string) (*ofclient.TransactionResponse, error) {
+					GetTransactionsFunc: func(ctx context.Context, apiKey string, startDate string) (*ofclient.TransactionResponse, error) {
 						return &ofclient.TransactionResponse{
 							Success: true,
 							Data: []ofclient.Transaction{
@@ -210,7 +210,7 @@ func TestSyncUserTransactions(t *testing.T) {
 				tt.mockBank(),
 			)
 
-			got, err := svc.SyncUserTransactions(ctx, tt.userID)
+			got, err := svc.SyncUserTransactions(ctx, tt.userID, false)
 
 			if tt.wantErr {
 				if err == nil {

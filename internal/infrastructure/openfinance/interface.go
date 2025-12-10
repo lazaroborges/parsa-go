@@ -8,6 +8,6 @@ import (
 type ClientInterface interface {
 	GetAccounts(ctx context.Context, apiKey string) (*AccountResponse, error)
 	GetAccountsWithStatus(ctx context.Context, apiKey string) (*AccountResponse, int, error) // Returns response and status code
-	GetTransactions(ctx context.Context, apiKey string) (*TransactionResponse, error)
+	GetTransactions(ctx context.Context, apiKey string, startDate string) (*TransactionResponse, error)
 	GetBills(ctx context.Context, apiKey string) (*BillResponse, error)
 }
