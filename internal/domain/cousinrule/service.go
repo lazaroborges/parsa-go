@@ -64,13 +64,14 @@ func (s *Service) ApplyRule(ctx context.Context, userID int64, params ApplyRuleP
 	}
 	result.TransactionsUpdated = count
 
-	// If tags were specified, apply them to transactions
-	if len(params.Changes.Tags) > 0 {
-		// Tags are applied within ApplyRuleToTransactions
-	}
-
 	// Create or update rule if requested
 	if params.CreateRule {
+		// Convert *[]string to []string for CreateCousinRuleParams
+		var tags []string
+		if params.Changes.Tags != nil {
+			tags = *params.Changes.Tags
+		}
+
 		ruleParams := CreateCousinRuleParams{
 			UserID:       userID,
 			CousinID:     params.CousinID,
@@ -80,7 +81,7 @@ func (s *Service) ApplyRule(ctx context.Context, userID int64, params ApplyRuleP
 			Notes:        params.Changes.Notes,
 			Considered:   params.Changes.Considered,
 			DontAskAgain: params.DontAskAgain,
-			Tags:         params.Changes.Tags,
+			Tags:         tags,
 		}
 
 		rule, wasCreated, err := s.repo.Upsert(ctx, ruleParams)
@@ -88,9 +89,9 @@ func (s *Service) ApplyRule(ctx context.Context, userID int64, params ApplyRuleP
 			return nil, fmt.Errorf("failed to create/update rule: %w", err)
 		}
 
-		// Set tags for the rule
-		if len(params.Changes.Tags) > 0 {
-			if err := s.repo.SetRuleTags(ctx, rule.ID, params.Changes.Tags); err != nil {
+		// Set tags for the rule if tags were explicitly provided (including empty to clear)
+		if params.Changes.Tags != nil {
+			if err := s.repo.SetRuleTags(ctx, rule.ID, *params.Changes.Tags); err != nil {
 				return nil, fmt.Errorf("failed to set rule tags: %w", err)
 			}
 		}

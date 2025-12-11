@@ -334,34 +334,109 @@ func (r *CousinRuleRepository) Upsert(ctx context.Context, params cousinrule.Cre
 	}
 	defer tx.Rollback()
 
-	// Use INSERT ... ON CONFLICT to handle upsert
-	query := `
-		INSERT INTO user_ck_values (user_id, cousin_id, type, category, description, notes, considered, dont_ask_again)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (user_id, cousin_id, type) DO UPDATE SET
-		    category = COALESCE(EXCLUDED.category, user_ck_values.category),
-		    description = COALESCE(EXCLUDED.description, user_ck_values.description),
-		    notes = COALESCE(EXCLUDED.notes, user_ck_values.notes),
-		    considered = COALESCE(EXCLUDED.considered, user_ck_values.considered),
-		    dont_ask_again = COALESCE(EXCLUDED.dont_ask_again, user_ck_values.dont_ask_again),
-		    updated_at = CURRENT_TIMESTAMP
-		RETURNING id, user_id, cousin_id, type, category, description, notes, considered, dont_ask_again, created_at, updated_at,
-		          (xmax = 0) AS was_inserted
-	`
+	// Convert *string and *bool to sql.NullString/sql.NullBool for proper NULL handling
+	var typeParam, categoryParam, descriptionParam, notesParam sql.NullString
+	var consideredParam sql.NullBool
+
+	if params.Type != nil {
+		typeParam = sql.NullString{String: *params.Type, Valid: true}
+	}
+	if params.Category != nil {
+		categoryParam = sql.NullString{String: *params.Category, Valid: true}
+	}
+	if params.Description != nil {
+		descriptionParam = sql.NullString{String: *params.Description, Valid: true}
+	}
+	if params.Notes != nil {
+		notesParam = sql.NullString{String: *params.Notes, Valid: true}
+	}
+	if params.Considered != nil {
+		consideredParam = sql.NullBool{Bool: *params.Considered, Valid: true}
+	}
+
+	// Check if rule already exists (handle NULL type explicitly)
+	var existingID sql.NullInt64
+	var checkQuery string
+	var checkArgs []any
+
+	if params.Type == nil {
+		checkQuery = `SELECT id FROM user_ck_values WHERE user_id = $1 AND cousin_id = $2 AND type IS NULL`
+		checkArgs = []any{params.UserID, params.CousinID}
+	} else {
+		checkQuery = `SELECT id FROM user_ck_values WHERE user_id = $1 AND cousin_id = $2 AND type = $3`
+		checkArgs = []any{params.UserID, params.CousinID, *params.Type}
+	}
+
+	err = tx.QueryRowContext(ctx, checkQuery, checkArgs...).Scan(&existingID)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, false, fmt.Errorf("failed to check existing rule: %w", err)
+	}
 
 	var rule cousinrule.CousinRule
 	var txType, category, description, notes sql.NullString
 	var considered sql.NullBool
 	var wasInserted bool
 
-	err = tx.QueryRowContext(ctx, query,
-		params.UserID, params.CousinID, params.Type, params.Category,
-		params.Description, params.Notes, params.Considered, params.DontAskAgain,
-	).Scan(
-		&rule.ID, &rule.UserID, &rule.CousinID, &txType,
-		&category, &description, &notes, &considered,
-		&rule.DontAskAgain, &rule.CreatedAt, &rule.UpdatedAt, &wasInserted,
-	)
+	if existingID.Valid {
+		// Update existing rule - build SET clause dynamically
+		setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
+		args := []any{}
+		argIdx := 1
+
+		if params.Category != nil {
+			setClauses = append(setClauses, fmt.Sprintf("category = $%d", argIdx))
+			args = append(args, *params.Category)
+			argIdx++
+		}
+		if params.Description != nil {
+			setClauses = append(setClauses, fmt.Sprintf("description = $%d", argIdx))
+			args = append(args, *params.Description)
+			argIdx++
+		}
+		if params.Notes != nil {
+			setClauses = append(setClauses, fmt.Sprintf("notes = $%d", argIdx))
+			args = append(args, *params.Notes)
+			argIdx++
+		}
+		if params.Considered != nil {
+			setClauses = append(setClauses, fmt.Sprintf("considered = $%d", argIdx))
+			args = append(args, *params.Considered)
+			argIdx++
+		}
+		setClauses = append(setClauses, fmt.Sprintf("dont_ask_again = $%d", argIdx))
+		args = append(args, params.DontAskAgain)
+		argIdx++
+
+		args = append(args, existingID.Int64)
+		updateQuery := fmt.Sprintf(`
+			UPDATE user_ck_values SET %s
+			WHERE id = $%d
+			RETURNING id, user_id, cousin_id, type, category, description, notes, considered, dont_ask_again, created_at, updated_at
+		`, strings.Join(setClauses, ", "), argIdx)
+
+		err = tx.QueryRowContext(ctx, updateQuery, args...).Scan(
+			&rule.ID, &rule.UserID, &rule.CousinID, &txType,
+			&category, &description, &notes, &considered,
+			&rule.DontAskAgain, &rule.CreatedAt, &rule.UpdatedAt,
+		)
+		wasInserted = false
+	} else {
+		// Insert new rule
+		insertQuery := `
+			INSERT INTO user_ck_values (user_id, cousin_id, type, category, description, notes, considered, dont_ask_again)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id, user_id, cousin_id, type, category, description, notes, considered, dont_ask_again, created_at, updated_at
+		`
+		err = tx.QueryRowContext(ctx, insertQuery,
+			params.UserID, params.CousinID, typeParam, categoryParam,
+			descriptionParam, notesParam, consideredParam, params.DontAskAgain,
+		).Scan(
+			&rule.ID, &rule.UserID, &rule.CousinID, &txType,
+			&category, &description, &notes, &considered,
+			&rule.DontAskAgain, &rule.CreatedAt, &rule.UpdatedAt,
+		)
+		wasInserted = true
+	}
 
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to upsert cousin rule: %w", err)
@@ -561,9 +636,9 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	// Apply tags if specified
-	if len(changes.Tags) > 0 {
-		// Get all transaction IDs that were updated
+	// Apply tags if specified (nil = don't change, empty = clear, non-empty = set)
+	if changes.Tags != nil {
+		// Get all transaction IDs that match
 		selectQuery := `
 			SELECT t.id FROM transactions t
 			JOIN accounts a ON t.account_id = a.id
@@ -591,9 +666,16 @@ func (r *CousinRuleRepository) ApplyRuleToTransactions(ctx context.Context, user
 		}
 		rows.Close()
 
-		// For each transaction, add tags (not replace, to match Django behavior)
+		// For each transaction, clear existing tags and add new ones
 		for _, txnID := range txnIDs {
-			for _, tagID := range changes.Tags {
+			// Clear existing tags for this transaction
+			_, err = tx.ExecContext(ctx, `DELETE FROM transaction_tags WHERE transaction_id = $1`, txnID)
+			if err != nil {
+				return 0, fmt.Errorf("failed to clear transaction tags: %w", err)
+			}
+
+			// Add new tags
+			for _, tagID := range *changes.Tags {
 				_, err = tx.ExecContext(ctx,
 					`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
 					txnID, tagID,

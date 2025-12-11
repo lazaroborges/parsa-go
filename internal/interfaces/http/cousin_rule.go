@@ -32,11 +32,12 @@ type ApplyRuleRequest struct {
 
 // ApplyRuleChangeRequest contains the changes to apply
 type ApplyRuleChangeRequest struct {
-	Category    *string  `json:"category,omitempty"`
-	Description *string  `json:"description,omitempty"`
-	Notes       *string  `json:"notes,omitempty"`
-	Status      *string  `json:"status,omitempty"` // "reconciled" or other - maps to considered
-	Tags        []string `json:"tags,omitempty"`
+	Category    *string   `json:"category,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	Notes       *string   `json:"notes,omitempty"`
+	Status      *string   `json:"status,omitempty"`     // "reconciled" or other - maps to considered
+	Considered  *bool     `json:"considered,omitempty"` // Direct boolean, takes precedence over status
+	Tags        *[]string `json:"tags,omitempty"`       // nil = don't change, empty = clear all
 }
 
 // ApplyRuleResponse is the response for applying a cousin rule
@@ -125,9 +126,11 @@ func (h *CousinRuleHandler) handleApplyRule(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Convert status to considered boolean
+	// Convert status to considered boolean (direct considered takes precedence)
 	var considered *bool
-	if req.Changes.Status != nil {
+	if req.Changes.Considered != nil {
+		considered = req.Changes.Considered
+	} else if req.Changes.Status != nil {
 		isConsidered := *req.Changes.Status == "reconciled"
 		considered = &isConsidered
 	}

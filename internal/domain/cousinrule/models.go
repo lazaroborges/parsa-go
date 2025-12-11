@@ -72,16 +72,16 @@ type ApplyRuleParams struct {
 
 // Changes represents the modifications to apply to transactions
 type Changes struct {
-	Category    *string  `json:"category,omitempty"`
-	Description *string  `json:"description,omitempty"`
-	Notes       *string  `json:"notes,omitempty"`
-	Considered  *bool    `json:"considered,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Category    *string   `json:"category,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	Notes       *string   `json:"notes,omitempty"`
+	Considered  *bool     `json:"considered,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"` // nil = don't change, empty slice = clear all tags
 }
 
 // IsEmpty returns true if no changes are specified
 func (c *Changes) IsEmpty() bool {
-	return c.Category == nil && c.Description == nil && c.Notes == nil && c.Considered == nil && len(c.Tags) == 0
+	return c.Category == nil && c.Description == nil && c.Notes == nil && c.Considered == nil && c.Tags == nil
 }
 
 // ApplyRuleResult contains the result of applying a rule
