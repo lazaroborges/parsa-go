@@ -384,11 +384,11 @@ var CategoryMapping = map[string]TransactionCategory{
 	},
 	"12020000": {
 		OpenFinanceName: "Hospedagem",
-		ParsaName:       "Outros",
+		ParsaName:       "Viagens",
 	},
 	"12030000": {
 		OpenFinanceName: "Programas de milhagem",
-		ParsaName:       "Outros",
+		ParsaName:       "Viagens",
 	},
 	"12040000": {
 		OpenFinanceName: "Passagem de ônibus",
@@ -400,7 +400,7 @@ var CategoryMapping = map[string]TransactionCategory{
 	},
 	"13000000": {
 		OpenFinanceName: "Doações",
-		ParsaName:       "Outros",
+		ParsaName:       "Doações e Contribuições",
 	},
 	"14000000": {
 		OpenFinanceName: "Apostas",
