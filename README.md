@@ -23,6 +23,8 @@ Parsa is a RESTful API for managing personal finances — accounts, transactions
 
 ## Architecture
 
+![Parsa System Architecture](system_design.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     INTERFACES LAYER                        │
