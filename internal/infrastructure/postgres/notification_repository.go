@@ -33,8 +33,9 @@ func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params n
 	query := `
 		INSERT INTO fcm_device_tokens (user_id, token, device_type)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, token) DO UPDATE
-			SET device_type = EXCLUDED.device_type,
+		ON CONFLICT (token) DO UPDATE
+			SET user_id = EXCLUDED.user_id,
+			    device_type = EXCLUDED.device_type,
 			    is_active = true,
 			    last_used = NOW()
 		RETURNING id, user_id, token, device_type, is_active, created_at, last_used

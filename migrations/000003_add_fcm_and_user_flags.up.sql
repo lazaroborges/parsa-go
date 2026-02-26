@@ -14,7 +14,7 @@ CREATE TABLE public.fcm_device_tokens (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     last_used timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT device_tokens_pkey PRIMARY KEY (id),
-    CONSTRAINT device_tokens_user_token_unique UNIQUE (user_id, token),
+    CONSTRAINT device_tokens_token_unique UNIQUE (token),
     CONSTRAINT device_tokens_device_type_check CHECK (((device_type)::text = ANY ((ARRAY['ios'::character varying, 'android'::character varying])::text[]))),
     CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
 );
