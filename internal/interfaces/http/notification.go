@@ -70,16 +70,6 @@ type OpenNotificationRequest struct {
 	NotificationID string `json:"notification_id"`
 }
 
-type SendNotificationRequest struct {
-	Title       string            `json:"title"`
-	Body        string            `json:"body"`
-	Category    string            `json:"category"`
-	Data        map[string]string `json:"data"`
-	SendToAll   bool              `json:"send_to_all"`
-	SendToUser  *int64            `json:"send_to_user"`
-	SendToToken *string           `json:"send_to_token"`
-}
-
 // --- Handlers ---
 
 // HandleNotifications handles GET /api/notifications/ (list)
@@ -285,63 +275,6 @@ func (h *NotificationHandler) HandleRegisterDevice(w http.ResponseWriter, r *htt
 		"success": true,
 		"token":   token.Token,
 	})
-}
-
-// HandleSend handles POST /api/notifications/send/
-func (h *NotificationHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var req SendNotificationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if req.Title == "" || req.Body == "" {
-		http.Error(w, "title and body are required", http.StatusBadRequest)
-		return
-	}
-
-	category := req.Category
-	if category == "" {
-		category = notification.CategoryGeneral
-	}
-
-	if !notification.IsValidCategory(category) {
-		http.Error(w, "invalid category", http.StatusBadRequest)
-		return
-	}
-
-	var err error
-	switch {
-	case req.SendToAll:
-		err = h.notificationService.SendToAll(r.Context(), req.Title, req.Body, category, req.Data)
-	case req.SendToUser != nil:
-		err = h.notificationService.SendToUser(r.Context(), *req.SendToUser, req.Title, req.Body, category, req.Data)
-	case req.SendToToken != nil:
-		err = h.notificationService.SendToToken(r.Context(), *req.SendToToken, req.Title, req.Body, category, req.Data)
-	default:
-		// Send to the requesting user
-		err = h.notificationService.SendToUser(r.Context(), userID, req.Title, req.Body, category, req.Data)
-	}
-
-	if err != nil {
-		log.Printf("Error sending notification: %v", err)
-		http.Error(w, "Failed to send notification", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 // HandleOpen handles POST /api/notifications/open/

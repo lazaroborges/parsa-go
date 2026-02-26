@@ -54,7 +54,6 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 	mux.Handle("/api/cousin-rules/{id}", authMiddleware(http.HandlerFunc(deps.CousinRuleHandler.HandleCousinRuleByID)))
 	mux.Handle("/api/notifications/register-device/", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandleRegisterDevice)))
 	mux.Handle("/api/notifications/preferences/", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandlePreferences)))
-	mux.Handle("/api/notifications/send/", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandleSend)))
 	mux.Handle("/api/notifications/open/", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandleOpen)))
 	mux.Handle("/api/notifications/{id}", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandleNotificationByID)))
 	mux.Handle("/api/notifications/", authMiddleware(http.HandlerFunc(deps.NotificationHandler.HandleNotifications)))

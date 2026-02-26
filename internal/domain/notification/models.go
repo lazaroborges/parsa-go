@@ -122,17 +122,6 @@ func (p CreateNotificationParams) Validate() error {
 	return nil
 }
 
-// SendNotificationParams contains parameters for the send endpoint
-type SendNotificationParams struct {
-	Title       string            `json:"title"`
-	Body        string            `json:"body"`
-	Category    string            `json:"category"`
-	Data        map[string]string `json:"data"`
-	SendToAll   bool              `json:"send_to_all"`
-	SendToUser  *int64            `json:"send_to_user"`
-	SendToToken *string           `json:"send_to_token"`
-}
-
 func IsValidCategory(c string) bool {
 	_, ok := validCategories[c]
 	return ok
