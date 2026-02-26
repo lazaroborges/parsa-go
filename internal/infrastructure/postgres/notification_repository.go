@@ -150,10 +150,10 @@ func (r *NotificationRepository) GetPreferences(ctx context.Context, userID int6
 }
 
 func (r *NotificationRepository) UpsertPreferences(ctx context.Context, userID int64, params notification.UpdatePreferenceParams) (*notification.NotificationPreference, error) {
-	budgets := true
-	general := true
-	accounts := true
-	transactions := true
+	var budgets any
+	var general any
+	var accounts any
+	var transactions any
 
 	if params.BudgetsEnabled != nil {
 		budgets = *params.BudgetsEnabled
@@ -170,12 +170,18 @@ func (r *NotificationRepository) UpsertPreferences(ctx context.Context, userID i
 
 	query := `
 		INSERT INTO fcm_notification_preferences (user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES (
+			$1,
+			COALESCE($2::boolean, true),
+			COALESCE($3::boolean, true),
+			COALESCE($4::boolean, true),
+			COALESCE($5::boolean, true)
+		)
 		ON CONFLICT (user_id) DO UPDATE
-			SET budgets_enabled = COALESCE($2, fcm_notification_preferences.budgets_enabled),
-			    general_enabled = COALESCE($3, fcm_notification_preferences.general_enabled),
-			    accounts_enabled = COALESCE($4, fcm_notification_preferences.accounts_enabled),
-			    transactions_enabled = COALESCE($5, fcm_notification_preferences.transactions_enabled),
+			SET budgets_enabled = COALESCE($2::boolean, fcm_notification_preferences.budgets_enabled),
+			    general_enabled = COALESCE($3::boolean, fcm_notification_preferences.general_enabled),
+			    accounts_enabled = COALESCE($4::boolean, fcm_notification_preferences.accounts_enabled),
+			    transactions_enabled = COALESCE($5::boolean, fcm_notification_preferences.transactions_enabled),
 			    updated_at = NOW()
 		RETURNING id, user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled, updated_at
 	`
