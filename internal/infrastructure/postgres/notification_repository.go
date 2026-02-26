@@ -23,7 +23,7 @@ func NewNotificationRepository(db *DB) *NotificationRepository {
 func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params notification.CreateDeviceTokenParams) (*notification.DeviceToken, error) {
 	// Reassign if the token belongs to another user
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2 AND user_id != $1`,
+		`UPDATE fcm_device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2 AND user_id != $1`,
 		params.UserID, params.Token,
 	)
 	if err != nil {
@@ -31,7 +31,7 @@ func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params n
 	}
 
 	query := `
-		INSERT INTO device_tokens (user_id, token, device_type)
+		INSERT INTO fcm_device_tokens (user_id, token, device_type)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (user_id, token) DO UPDATE
 			SET device_type = EXCLUDED.device_type,
@@ -54,7 +54,7 @@ func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params n
 func (r *NotificationRepository) GetActiveTokensByUserID(ctx context.Context, userID int64) ([]*notification.DeviceToken, error) {
 	query := `
 		SELECT id, user_id, token, device_type, is_active, created_at, last_used
-		FROM device_tokens
+		FROM fcm_device_tokens
 		WHERE user_id = $1 AND is_active = true
 		ORDER BY last_used DESC
 	`
@@ -80,7 +80,7 @@ func (r *NotificationRepository) GetActiveTokensByUserID(ctx context.Context, us
 func (r *NotificationRepository) GetAllActiveTokens(ctx context.Context) ([]*notification.DeviceToken, error) {
 	query := `
 		SELECT id, user_id, token, device_type, is_active, created_at, last_used
-		FROM device_tokens
+		FROM fcm_device_tokens
 		WHERE is_active = true
 		ORDER BY user_id
 	`
@@ -105,7 +105,7 @@ func (r *NotificationRepository) GetAllActiveTokens(ctx context.Context) ([]*not
 
 func (r *NotificationRepository) DeactivateToken(ctx context.Context, token string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE device_tokens SET is_active = false WHERE token = $1`,
+		`UPDATE fcm_device_tokens SET is_active = false WHERE token = $1`,
 		token,
 	)
 	if err != nil {
@@ -116,7 +116,7 @@ func (r *NotificationRepository) DeactivateToken(ctx context.Context, token stri
 
 func (r *NotificationRepository) ReassignToken(ctx context.Context, token string, newUserID int64) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2`,
+		`UPDATE fcm_device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2`,
 		newUserID, token,
 	)
 	if err != nil {
@@ -130,7 +130,7 @@ func (r *NotificationRepository) ReassignToken(ctx context.Context, token string
 func (r *NotificationRepository) GetPreferences(ctx context.Context, userID int64) (*notification.NotificationPreference, error) {
 	query := `
 		SELECT id, user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled, updated_at
-		FROM notification_preferences
+		FROM fcm_notification_preferences
 		WHERE user_id = $1
 	`
 
@@ -169,13 +169,13 @@ func (r *NotificationRepository) UpsertPreferences(ctx context.Context, userID i
 	}
 
 	query := `
-		INSERT INTO notification_preferences (user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled)
+		INSERT INTO fcm_notification_preferences (user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id) DO UPDATE
-			SET budgets_enabled = COALESCE($2, notification_preferences.budgets_enabled),
-			    general_enabled = COALESCE($3, notification_preferences.general_enabled),
-			    accounts_enabled = COALESCE($4, notification_preferences.accounts_enabled),
-			    transactions_enabled = COALESCE($5, notification_preferences.transactions_enabled),
+			SET budgets_enabled = COALESCE($2, fcm_notification_preferences.budgets_enabled),
+			    general_enabled = COALESCE($3, fcm_notification_preferences.general_enabled),
+			    accounts_enabled = COALESCE($4, fcm_notification_preferences.accounts_enabled),
+			    transactions_enabled = COALESCE($5, fcm_notification_preferences.transactions_enabled),
 			    updated_at = NOW()
 		RETURNING id, user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled, updated_at
 	`
@@ -199,7 +199,7 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, params 
 	}
 
 	query := `
-		INSERT INTO notifications (user_id, title, message, category, data)
+		INSERT INTO fcm_notifications (user_id, title, message, category, data)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, user_id, title, message, category, data, opened_at, created_at
 	`
@@ -232,7 +232,7 @@ func (r *NotificationRepository) ListByUserID(ctx context.Context, userID int64,
 	// Get total count
 	var total int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM notifications WHERE user_id = $1`,
+		`SELECT COUNT(*) FROM fcm_notifications WHERE user_id = $1`,
 		userID,
 	).Scan(&total)
 	if err != nil {
@@ -242,7 +242,7 @@ func (r *NotificationRepository) ListByUserID(ctx context.Context, userID int64,
 	offset := (page - 1) * perPage
 	query := `
 		SELECT id, user_id, title, message, category, data, opened_at, created_at
-		FROM notifications
+		FROM fcm_notifications
 		WHERE user_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
@@ -286,7 +286,7 @@ func (r *NotificationRepository) ListByUserID(ctx context.Context, userID int64,
 
 func (r *NotificationRepository) MarkOpened(ctx context.Context, notificationID string, userID int64) error {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE notifications SET opened_at = $1 WHERE id = $2 AND user_id = $3 AND opened_at IS NULL`,
+		`UPDATE fcm_notifications SET opened_at = $1 WHERE id = $2 AND user_id = $3 AND opened_at IS NULL`,
 		time.Now(), notificationID, userID,
 	)
 	if err != nil {
