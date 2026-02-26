@@ -80,6 +80,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Load notification message texts (needed for sync services)
 	msgs, err := messages.Load()
 	if err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to load notification messages: %w", err)
 	}
 
