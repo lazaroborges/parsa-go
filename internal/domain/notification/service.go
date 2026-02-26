@@ -131,7 +131,6 @@ func (s *Service) SendToUser(ctx context.Context, userID int64, title, body, cat
 
 	if len(tokens) == 0 {
 		log.Printf("No active device tokens for user %d", userID)
-		return nil
 	}
 
 	// Add route from category if not present
@@ -143,7 +142,7 @@ func (s *Service) SendToUser(ctx context.Context, userID int64, title, body, cat
 	}
 
 	// Send to all active tokens via FCM (if messenger is configured)
-	if s.messenger != nil {
+	if s.messenger != nil && len(tokens) > 0 {
 		tokenStrings := make([]string, len(tokens))
 		for i, t := range tokens {
 			tokenStrings[i] = t.Token
@@ -207,32 +206,31 @@ func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *mess
 	}
 	if len(tokens) == 0 {
 		log.Printf("SendSyncComplete: no active tokens for user %d", userID)
-		return
 	}
 
-	tokenStrings := make([]string, len(tokens))
-	for i, t := range tokens {
-		tokenStrings[i] = t.Token
-	}
-
-	if s.messenger == nil {
-		log.Printf("SendSyncComplete: messenger not configured, skipping FCM for user %d", userID)
-		return
-	}
-
-	// 1) Data-only: triggers in-app reload via onMessage
-	if err := s.messenger.SendDataOnly(ctx, tokenStrings, map[string]string{"action": "reload"}); err != nil {
-		log.Printf("SendSyncComplete: data-only send failed for user %d: %v", userID, err)
-	}
-
-	// 2) Notification: shows in OS tray when app is background/terminated
 	text := msgs.SyncComplete
 	data := map[string]string{"route": CategoryGeneral}
-	if err := s.messenger.SendMulticast(ctx, tokenStrings, text.Title, text.Body, data); err != nil {
-		log.Printf("SendSyncComplete: notification send failed for user %d: %v", userID, err)
+
+	if s.messenger != nil && len(tokens) > 0 {
+		tokenStrings := make([]string, len(tokens))
+		for i, t := range tokens {
+			tokenStrings[i] = t.Token
+		}
+
+		// 1) Data-only: triggers in-app reload via onMessage
+		if err := s.messenger.SendDataOnly(ctx, tokenStrings, map[string]string{"action": "reload"}); err != nil {
+			log.Printf("SendSyncComplete: data-only send failed for user %d: %v", userID, err)
+		}
+
+		// 2) Notification: shows in OS tray when app is background/terminated
+		if err := s.messenger.SendMulticast(ctx, tokenStrings, text.Title, text.Body, data); err != nil {
+			log.Printf("SendSyncComplete: notification send failed for user %d: %v", userID, err)
+		}
+	} else if len(tokens) > 0 {
+		log.Printf("SendSyncComplete: messenger not configured, skipping FCM for user %d", userID)
 	}
 
-	// Store notification record
+	// Store notification record (always, even when no tokens)
 	if _, err := s.repo.CreateNotification(ctx, CreateNotificationParams{
 		UserID:   userID,
 		Title:    text.Title,
