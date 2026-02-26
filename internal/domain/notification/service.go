@@ -65,7 +65,6 @@ func (s *Service) GetPreferences(ctx context.Context, userID int64) (*Notificati
 		}
 		return nil, err
 	}
-	}
 
 	return prefs, nil
 }
@@ -197,6 +196,10 @@ func (s *Service) SendToToken(ctx context.Context, token, title, body, category 
 //  1. Data-only with action:reload — handled silently by onMessage in foreground.
 //  2. Notification with title/body — shows in OS tray for background/terminated.
 func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *messages.Messages) {
+	if msgs == nil {
+		log.Printf("SendSyncComplete: messages nil for user %d, skipping", userID)
+		return
+	}
 	tokens, err := s.repo.GetActiveTokensByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("SendSyncComplete: failed to get tokens for user %d: %v", userID, err)
@@ -243,6 +246,10 @@ func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *mess
 
 // SendProviderKeyCleared notifies the user when their provider_key was cleared (e.g. token expired/revoked).
 func (s *Service) SendProviderKeyCleared(ctx context.Context, userID int64, msgs *messages.Messages) {
+	if msgs == nil {
+		log.Printf("SendProviderKeyCleared: messages nil for user %d, skipping", userID)
+		return
+	}
 	text := msgs.ProviderKeyCleared
 	_ = s.SendToUser(ctx, userID, text.Title, text.Body, CategoryAccounts, nil)
 }

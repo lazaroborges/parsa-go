@@ -27,8 +27,9 @@ var validDeviceTypes = map[string]struct{}{
 
 // Domain errors
 var (
-	ErrDeviceTokenNotFound  = errors.New("device token not found")
-	ErrNotificationNotFound = errors.New("notification not found")
+	ErrDeviceTokenNotFound    = errors.New("device token not found")
+	ErrNotificationNotFound   = errors.New("notification not found")
+	ErrPreferencesNotFound    = errors.New("notification preferences not found")
 	ErrInvalidCategory      = errors.New("invalid notification category")
 	ErrInvalidDeviceType    = errors.New("device type must be 'ios' or 'android'")
 	ErrInvalidToken         = errors.New("device token is required")

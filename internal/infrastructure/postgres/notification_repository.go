@@ -140,7 +140,7 @@ func (r *NotificationRepository) GetPreferences(ctx context.Context, userID int6
 		&pref.AccountsEnabled, &pref.TransactionsEnabled, &pref.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("notification preferences not found")
+		return nil, notification.ErrPreferencesNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get notification preferences: %w", err)
