@@ -292,7 +292,9 @@ func (r *NotificationRepository) ListByUserID(ctx context.Context, userID int64,
 
 func (r *NotificationRepository) MarkOpened(ctx context.Context, notificationID string, userID int64) error {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE fcm_notifications SET opened_at = $1 WHERE id = $2 AND user_id = $3 AND opened_at IS NULL`,
+		`UPDATE fcm_notifications
+		SET opened_at = COALESCE(opened_at, $1)
+		WHERE id = $2 AND user_id = $3`,
 		time.Now(), notificationID, userID,
 	)
 	if err != nil {
