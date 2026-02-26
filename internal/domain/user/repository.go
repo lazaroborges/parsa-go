@@ -12,4 +12,5 @@ type Repository interface {
 	Update(ctx context.Context, userID int64, params UpdateUserParams) (*User, error)
 	ListUsersWithProviderKey(ctx context.Context) ([]*User, error)
 	ClearProviderKey(ctx context.Context, userID int64) error
+	SetHasFinishedOpenfinanceFlow(ctx context.Context, userID int64, value bool) error
 }

@@ -179,6 +179,10 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 				return
 			}
 			log.Printf("Bill sync completed for user %d: created=%d, updated=%d", userID, billResult.Created, billResult.Updated)
+
+			if err := h.userRepo.SetHasFinishedOpenfinanceFlow(ctx, userID, true); err != nil {
+				log.Printf("Error setting has_finished_openfinance_flow for user %d: %v", userID, err)
+			}
 		}()
 
 		return

@@ -52,7 +52,7 @@ func (r *UserRepository) Create(ctx context.Context, params user.CreateUserParam
 	query := `
     INSERT INTO users (email, name, first_name, last_name, avatar_url, oauth_provider, oauth_id, password_hash)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, created_at, updated_at
+    RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, has_finished_openfinance_flow, created_at, updated_at
 `
 
 	var user user.User
@@ -63,7 +63,7 @@ func (r *UserRepository) Create(ctx context.Context, params user.CreateUserParam
 	).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL,
-		&user.CreatedAt, &user.UpdatedAt,
+		&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -75,7 +75,7 @@ func (r *UserRepository) Create(ctx context.Context, params user.CreateUserParam
 
 func (r *UserRepository) GetByID(ctx context.Context, id int64) (*user.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -84,7 +84,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id int64) (*user.User, err
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-		&user.CreatedAt, &user.UpdatedAt,
+		&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -103,7 +103,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id int64) (*user.User, err
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -112,7 +112,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.Us
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-		&user.CreatedAt, &user.UpdatedAt,
+		&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -131,7 +131,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.Us
 
 func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID string) (*user.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 		FROM users
 		WHERE oauth_provider = $1 AND oauth_id = $2
 	`
@@ -140,7 +140,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 	err := r.db.QueryRowContext(ctx, query, provider, oauthID).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-		&user.CreatedAt, &user.UpdatedAt,
+		&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -159,7 +159,7 @@ func (r *UserRepository) GetByOAuth(ctx context.Context, provider, oauthID strin
 
 func (r *UserRepository) List(ctx context.Context) ([]*user.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -176,7 +176,7 @@ func (r *UserRepository) List(ctx context.Context) ([]*user.User, error) {
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-			&user.CreatedAt, &user.UpdatedAt,
+			&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -212,7 +212,7 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params user.U
 		    provider_key = COALESCE($6, provider_key),
 		    updated_at = NOW()
 		WHERE id = $1
-		RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		RETURNING id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 	`
 
 	var user user.User
@@ -222,7 +222,7 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params user.U
 	).Scan(
 		&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 		&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-		&user.CreatedAt, &user.UpdatedAt,
+		&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -255,10 +255,26 @@ func (r *UserRepository) ClearProviderKey(ctx context.Context, userID int64) err
 	return nil
 }
 
+func (r *UserRepository) SetHasFinishedOpenfinanceFlow(ctx context.Context, userID int64, value bool) error {
+	query := `UPDATE users SET has_finished_openfinance_flow = $2, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.ExecContext(ctx, query, userID, value)
+	if err != nil {
+		return fmt.Errorf("failed to set has_finished_openfinance_flow: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
 // ListUsersWithProviderKey retrieves all users that have a provider key set
 func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*user.User, error) {
 	query := `
-		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, created_at, updated_at
+		SELECT id, email, name, first_name, last_name, oauth_provider, oauth_id, password_hash, avatar_url, provider_key, has_finished_openfinance_flow, created_at, updated_at
 		FROM users
 		WHERE provider_key IS NOT NULL AND provider_key != ''
 		ORDER BY id
@@ -276,7 +292,7 @@ func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*user.
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.FirstName, &user.LastName,
 			&user.OAuthProvider, &user.OAuthID, &user.PasswordHash, &user.AvatarURL, &user.ProviderKey,
-			&user.CreatedAt, &user.UpdatedAt,
+			&user.HasFinishedOpenfinanceFlow, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
