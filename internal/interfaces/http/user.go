@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/notification"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
+	"parsa/internal/shared/messages"
 	"parsa/internal/shared/middleware"
 )
 
@@ -21,6 +23,8 @@ type UserHandler struct {
 	accountSyncService     *openfinance.AccountSyncService
 	transactionSyncService *openfinance.TransactionSyncService
 	billSyncService        *openfinance.BillSyncService
+	notificationService    *notification.Service
+	msgs                   *messages.Messages
 }
 
 func NewUserHandler(
@@ -30,6 +34,8 @@ func NewUserHandler(
 	accountSyncService *openfinance.AccountSyncService,
 	transactionSyncService *openfinance.TransactionSyncService,
 	billSyncService *openfinance.BillSyncService,
+	notificationService *notification.Service,
+	msgs *messages.Messages,
 ) *UserHandler {
 	return &UserHandler{
 		userRepo:               userRepo,
@@ -38,6 +44,8 @@ func NewUserHandler(
 		accountSyncService:     accountSyncService,
 		transactionSyncService: transactionSyncService,
 		billSyncService:        billSyncService,
+		notificationService:    notificationService,
+		msgs:                   msgs,
 	}
 }
 
@@ -182,7 +190,10 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 
 			if err := h.userRepo.SetHasFinishedOpenfinanceFlow(ctx, userID, true); err != nil {
 				log.Printf("Error setting has_finished_openfinance_flow for user %d: %v", userID, err)
+				return
 			}
+
+			h.notificationService.SendSyncComplete(ctx, userID, h.msgs)
 		}()
 
 		return

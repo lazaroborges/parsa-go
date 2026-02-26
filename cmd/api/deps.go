@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"parsa/internal/domain/account"
@@ -16,6 +17,7 @@ import (
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/shared/auth"
 	"parsa/internal/shared/config"
+	"parsa/internal/shared/messages"
 )
 
 // Dependencies holds all initialized application components.
@@ -108,7 +110,30 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		}
 	}
 
-	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
+	// Load notification message texts
+	msgs, err := messages.Load("internal/shared/messages/notifications.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load notification messages: %w", err)
+	}
+
+	// Initialize notification components (Firebase FCM)
+	notificationRepo := postgres.NewNotificationRepository(db)
+	var messenger notification.Messenger
+	if cfg.Firebase.CredentialsFile != "" {
+		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
+		} else {
+			log.Println("Firebase Cloud Messaging initialized")
+			messenger = fbClient
+		}
+	} else {
+		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
+	}
+	notificationService := notification.NewService(notificationRepo, messenger)
+	notificationHandler := httphandlers.NewNotificationHandler(notificationService)
+
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService, notificationService, msgs)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	tagRepo := postgres.NewTagRepository(db)
 	tagHandler := httphandlers.NewTagHandler(tagRepo)
@@ -124,26 +149,6 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize and start cousin notification listener
 	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
 	cousinListener.Start(context.Background())
-
-	// Initialize notification components (Firebase FCM)
-	var notificationHandler *httphandlers.NotificationHandler
-	notificationRepo := postgres.NewNotificationRepository(db)
-	if cfg.Firebase.CredentialsFile != "" {
-		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
-		if err != nil {
-			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
-			notificationService := notification.NewService(notificationRepo, nil)
-			notificationHandler = httphandlers.NewNotificationHandler(notificationService)
-		} else {
-			log.Println("Firebase Cloud Messaging initialized")
-			notificationService := notification.NewService(notificationRepo, fbClient)
-			notificationHandler = httphandlers.NewNotificationHandler(notificationService)
-		}
-	} else {
-		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
-		notificationService := notification.NewService(notificationRepo, nil)
-		notificationHandler = httphandlers.NewNotificationHandler(notificationService)
-	}
 
 	return &Dependencies{
 		DB:                     db,

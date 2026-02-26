@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+
+	"parsa/internal/shared/messages"
 )
 
 // Service contains the business logic for notification operations
@@ -186,6 +188,54 @@ func (s *Service) SendToToken(ctx context.Context, token, title, body, category 
 	}
 
 	return s.messenger.Send(ctx, token, title, body, data)
+}
+
+// SendSyncComplete sends two FCM messages when the OpenFinance sync finishes:
+//  1. Data-only with action:reload — handled silently by onMessage in foreground.
+//  2. Notification with title/body — shows in OS tray for background/terminated.
+func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *messages.Messages) {
+	tokens, err := s.repo.GetActiveTokensByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("SendSyncComplete: failed to get tokens for user %d: %v", userID, err)
+		return
+	}
+	if len(tokens) == 0 {
+		log.Printf("SendSyncComplete: no active tokens for user %d", userID)
+		return
+	}
+
+	tokenStrings := make([]string, len(tokens))
+	for i, t := range tokens {
+		tokenStrings[i] = t.Token
+	}
+
+	if s.messenger == nil {
+		log.Printf("SendSyncComplete: messenger not configured, skipping FCM for user %d", userID)
+		return
+	}
+
+	// 1) Data-only: triggers in-app reload via onMessage
+	if err := s.messenger.SendDataOnly(ctx, tokenStrings, map[string]string{"action": "reload"}); err != nil {
+		log.Printf("SendSyncComplete: data-only send failed for user %d: %v", userID, err)
+	}
+
+	// 2) Notification: shows in OS tray when app is background/terminated
+	text := msgs.SyncComplete
+	data := map[string]string{"route": CategoryGeneral}
+	if err := s.messenger.SendMulticast(ctx, tokenStrings, text.Title, text.Body, data); err != nil {
+		log.Printf("SendSyncComplete: notification send failed for user %d: %v", userID, err)
+	}
+
+	// Store notification record
+	if _, err := s.repo.CreateNotification(ctx, CreateNotificationParams{
+		UserID:   userID,
+		Title:    text.Title,
+		Message:  text.Body,
+		Category: CategoryGeneral,
+		Data:     data,
+	}); err != nil {
+		log.Printf("SendSyncComplete: failed to store notification for user %d: %v", userID, err)
+	}
 }
 
 // SendToAll sends a push notification to all users with active device tokens.

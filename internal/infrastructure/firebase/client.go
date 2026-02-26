@@ -88,3 +88,36 @@ func (c *Client) SendMulticast(ctx context.Context, tokens []string, title, body
 	log.Printf("FCM multicast: %d success, %d failure", resp.SuccessCount, resp.FailureCount)
 	return nil
 }
+
+// SendDataOnly sends a data-only message (no OS notification) to multiple tokens.
+// Used for silent triggers like in-app reload — handled by onMessage in foreground only.
+func (c *Client) SendDataOnly(ctx context.Context, tokens []string, data map[string]string) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	msg := &messaging.MulticastMessage{
+		Tokens: tokens,
+		Data:   data,
+	}
+
+	resp, err := c.msgClient.SendEachForMulticast(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("failed to send FCM data-only multicast: %w", err)
+	}
+
+	if resp.FailureCount > 0 {
+		for i, sendResp := range resp.Responses {
+			if sendResp.Error != nil {
+				if messaging.IsUnregistered(sendResp.Error) || messaging.IsInvalidArgument(sendResp.Error) {
+					log.Printf("Invalid FCM token at index %d (token=%s): %v", i, tokens[i], sendResp.Error)
+				} else {
+					log.Printf("FCM data-only send error at index %d: %v", i, sendResp.Error)
+				}
+			}
+		}
+	}
+
+	log.Printf("FCM data-only multicast: %d success, %d failure", resp.SuccessCount, resp.FailureCount)
+	return nil
+}
