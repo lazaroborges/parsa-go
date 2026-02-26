@@ -74,6 +74,10 @@ func (m *MockUserRepo) ListUsersWithProviderKey(ctx context.Context) ([]*user.Us
 	return nil, nil
 }
 
+func newTestUserHandler(userRepo *MockUserRepo, accountRepo *MockAccountRepo) *UserHandler {
+	return NewUserHandler(userRepo, accountRepo, nil, nil, nil, nil)
+}
+
 func TestHandleMe_Get(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -83,18 +87,6 @@ func TestHandleMe_Get(t *testing.T) {
 	}{
 		{
 			name:   "Success",
-			userID: 1,
-			mockRepo: func() *MockUserRepo {
-				return &MockUserRepo{
-					GetByIDFunc: func(ctx context.Context, id int64) (*user.User, error) {
-						return &user.User{ID: id, Email: "test@example.com"}, nil
-					},
-				}
-			},
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:   "Success with Balance Sum",
 			userID: 1,
 			mockRepo: func() *MockUserRepo {
 				return &MockUserRepo{
@@ -124,10 +116,10 @@ func TestHandleMe_Get(t *testing.T) {
 			repo := tt.mockRepo()
 			accountRepo := &MockAccountRepo{
 				GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
-					return 0, nil // Return 0 for balance calculations in tests
+					return 0, nil
 				},
 			}
-			handler := NewUserHandler(repo, accountRepo)
+			handler := newTestUserHandler(repo, accountRepo)
 
 			req, _ := http.NewRequest(http.MethodGet, "/api/users/me", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
@@ -141,10 +133,10 @@ func TestHandleMe_Get(t *testing.T) {
 			}
 
 			if tt.expectedStatus == http.StatusOK {
-				var u user.User
-				json.NewDecoder(rr.Body).Decode(&u)
-				if u.ID != tt.userID {
-					t.Errorf("handler returned wrong user ID: got %v want %v", u.ID, tt.userID)
+				var resp UserResponse
+				json.NewDecoder(rr.Body).Decode(&resp)
+				if resp.ID != tt.userID {
+					t.Errorf("handler returned wrong user ID: got %v want %v", resp.ID, tt.userID)
 				}
 			}
 		})
@@ -185,7 +177,7 @@ func TestHandleMe_Patch(t *testing.T) {
 			name:   "Invalid Body",
 			userID: 1,
 			body: map[string]interface{}{
-				"name": 123, // Invalid type
+				"name": 123,
 			},
 			mockRepo: func() *MockUserRepo {
 				return &MockUserRepo{}
@@ -214,10 +206,10 @@ func TestHandleMe_Patch(t *testing.T) {
 			repo := tt.mockRepo()
 			accountRepo := &MockAccountRepo{
 				GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
-					return 0, nil // Return 0 for balance calculations in tests
+					return 0, nil
 				},
 			}
-			handler := NewUserHandler(repo, accountRepo)
+			handler := newTestUserHandler(repo, accountRepo)
 
 			bodyBytes, _ := json.Marshal(tt.body)
 			req, _ := http.NewRequest(http.MethodPatch, "/api/users/me", bytes.NewBuffer(bodyBytes))
@@ -238,10 +230,10 @@ func TestHandleMe_MethodNotAllowed(t *testing.T) {
 	repo := &MockUserRepo{}
 	accountRepo := &MockAccountRepo{
 		GetBalanceSumBySubtypeFunc: func(ctx context.Context, userID int64, subtypes []string) (float64, error) {
-			return 0, nil // Return 0 for balance calculations in tests
+			return 0, nil
 		},
 	}
-	handler := NewUserHandler(repo, accountRepo)
+	handler := newTestUserHandler(repo, accountRepo)
 
 	req, _ := http.NewRequest(http.MethodDelete, "/api/users/me", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, int64(1))

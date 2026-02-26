@@ -44,7 +44,7 @@ Examples:
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println(usage)
+		fmt.Print(usage)
 		os.Exit(1)
 	}
 
@@ -54,10 +54,10 @@ func main() {
 	case "duplicate-check":
 		runDuplicateCheck(os.Args[2:])
 	case "help", "-h", "--help":
-		fmt.Println(usage)
+		fmt.Print(usage)
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
-		fmt.Println(usage)
+		fmt.Print(usage)
 		os.Exit(1)
 	}
 }
