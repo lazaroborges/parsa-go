@@ -70,6 +70,8 @@ type OpenNotificationRequest struct {
 	NotificationID string `json:"notification_id"`
 }
 
+const maxNotificationBodySize = 1 << 20 // 1 MiB
+
 // --- Handlers ---
 
 // HandleNotifications handles GET /api/notifications/ (list)
@@ -199,6 +201,7 @@ func (h *NotificationHandler) handleGetPreferences(w http.ResponseWriter, r *htt
 }
 
 func (h *NotificationHandler) handleUpdatePreferences(w http.ResponseWriter, r *http.Request, userID int64) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxNotificationBodySize)
 	var req UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -246,6 +249,7 @@ func (h *NotificationHandler) HandleRegisterDevice(w http.ResponseWriter, r *htt
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxNotificationBodySize)
 	var req RegisterDeviceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -290,6 +294,7 @@ func (h *NotificationHandler) HandleOpen(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxNotificationBodySize)
 	var req OpenNotificationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
