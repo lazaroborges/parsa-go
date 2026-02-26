@@ -251,7 +251,9 @@ func (s *Service) SendProviderKeyCleared(ctx context.Context, userID int64, msgs
 		return
 	}
 	text := msgs.ProviderKeyCleared
-	_ = s.SendToUser(ctx, userID, text.Title, text.Body, CategoryAccounts, nil)
+	if err := s.SendToUser(ctx, userID, text.Title, text.Body, CategoryAccounts, nil); err != nil {
+		log.Printf("SendProviderKeyCleared: failed to notify user %d: %v", userID, err)
+	}
 }
 
 // SendToAll sends a push notification to all users with active device tokens.
