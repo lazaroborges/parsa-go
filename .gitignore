@@ -6,6 +6,7 @@ bin/
 *.dylib
 parsa
 parsa-api
+service-account.json
 
 # Environment files
 .env

@@ -6,8 +6,10 @@ import (
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/cousinrule"
+	"parsa/internal/domain/notification"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/infrastructure/crypto"
+	fcmclient "parsa/internal/infrastructure/firebase"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/infrastructure/postgres/listener"
@@ -21,12 +23,13 @@ type Dependencies struct {
 	DB *postgres.DB
 
 	// Handlers
-	AuthHandler        *httphandlers.AuthHandler
-	UserHandler        *httphandlers.UserHandler
-	AccountHandler     *httphandlers.AccountHandler
-	TransactionHandler *httphandlers.TransactionHandler
-	TagHandler         *httphandlers.TagHandler
-	CousinRuleHandler  *httphandlers.CousinRuleHandler
+	AuthHandler         *httphandlers.AuthHandler
+	UserHandler         *httphandlers.UserHandler
+	AccountHandler      *httphandlers.AccountHandler
+	TransactionHandler  *httphandlers.TransactionHandler
+	TagHandler          *httphandlers.TagHandler
+	CousinRuleHandler   *httphandlers.CousinRuleHandler
+	NotificationHandler *httphandlers.NotificationHandler
 
 	// Auth
 	JWT *auth.JWT
@@ -122,6 +125,26 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
 	cousinListener.Start(context.Background())
 
+	// Initialize notification components (Firebase FCM)
+	var notificationHandler *httphandlers.NotificationHandler
+	notificationRepo := postgres.NewNotificationRepository(db)
+	if cfg.Firebase.CredentialsFile != "" {
+		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
+			notificationService := notification.NewService(notificationRepo, nil)
+			notificationHandler = httphandlers.NewNotificationHandler(notificationService)
+		} else {
+			log.Println("Firebase Cloud Messaging initialized")
+			notificationService := notification.NewService(notificationRepo, fbClient)
+			notificationHandler = httphandlers.NewNotificationHandler(notificationService)
+		}
+	} else {
+		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
+		notificationService := notification.NewService(notificationRepo, nil)
+		notificationHandler = httphandlers.NewNotificationHandler(notificationService)
+	}
+
 	return &Dependencies{
 		DB:                     db,
 		AuthHandler:            authHandler,
@@ -130,6 +153,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		TransactionHandler:     transactionHandler,
 		TagHandler:             tagHandler,
 		CousinRuleHandler:      cousinRuleHandler,
+		NotificationHandler:    notificationHandler,
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
