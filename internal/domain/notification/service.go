@@ -238,6 +238,12 @@ func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *mess
 	}
 }
 
+// SendProviderKeyCleared notifies the user when their provider_key was cleared (e.g. token expired/revoked).
+func (s *Service) SendProviderKeyCleared(ctx context.Context, userID int64, msgs *messages.Messages) {
+	text := msgs.ProviderKeyCleared
+	_ = s.SendToUser(ctx, userID, text.Title, text.Body, CategoryAccounts, nil)
+}
+
 // SendToAll sends a push notification to all users with active device tokens.
 // This is intended for staff/admin use only (enforced at the handler level).
 func (s *Service) SendToAll(ctx context.Context, title, body, category string, data map[string]string) error {

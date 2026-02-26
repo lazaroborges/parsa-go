@@ -98,6 +98,12 @@ func (m *MockUserRepo) Update(ctx context.Context, userID int64, params user.Upd
 func (m *MockUserRepo) ListUsersWithProviderKey(ctx context.Context) ([]*user.User, error) {
 	return nil, nil
 }
+func (m *MockUserRepo) ClearProviderKey(ctx context.Context, userID int64) error {
+	return nil
+}
+func (m *MockUserRepo) SetHasFinishedOpenfinanceFlow(ctx context.Context, userID int64, value bool) error {
+	return nil
+}
 
 // MockAccountRepo for Service
 type MockAccountRepo struct {
@@ -292,6 +298,7 @@ func TestSyncUserAccounts(t *testing.T) {
 				tt.mockUser(),
 				accService,
 				tt.mockItem(),
+				nil, nil, // notification service and msgs not needed for this test
 			)
 
 			got, err := svc.SyncUserAccounts(ctx, tt.userID)

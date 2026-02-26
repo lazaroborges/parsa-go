@@ -9,9 +9,11 @@ import (
 	"net/http"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/notification"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
+	"parsa/internal/shared/messages"
 )
 
 // ErrProviderUnauthorized is returned when the provider API rejects the key (401).
@@ -29,10 +31,12 @@ type SyncResult struct {
 
 // AccountSyncService handles syncing accounts from the Open Finance API
 type AccountSyncService struct {
-	client         ofclient.ClientInterface
-	userRepo       user.Repository
-	accountService *account.Service
-	itemRepo       models.ItemRepository
+	client               ofclient.ClientInterface
+	userRepo             user.Repository
+	accountService       *account.Service
+	itemRepo             models.ItemRepository
+	notificationService  *notification.Service
+	notificationMessages *messages.Messages
 }
 
 // NewAccountSyncService creates a new account sync service
@@ -41,12 +45,16 @@ func NewAccountSyncService(
 	userRepo user.Repository,
 	accountService *account.Service,
 	itemRepo models.ItemRepository,
+	notificationService *notification.Service,
+	notificationMessages *messages.Messages,
 ) *AccountSyncService {
 	return &AccountSyncService{
-		client:         client,
-		userRepo:       userRepo,
-		accountService: accountService,
-		itemRepo:       itemRepo,
+		client:               client,
+		userRepo:             userRepo,
+		accountService:       accountService,
+		itemRepo:             itemRepo,
+		notificationService:  notificationService,
+		notificationMessages: notificationMessages,
 	}
 }
 
@@ -101,6 +109,8 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 			log.Printf("User %d: Provider returned 401 — clearing provider_key and stopping sync", userID)
 			if clearErr := s.userRepo.ClearProviderKey(ctx, userID); clearErr != nil {
 				log.Printf("User %d: Failed to clear provider key: %v", userID, clearErr)
+			} else if s.notificationService != nil && s.notificationMessages != nil {
+				s.notificationService.SendProviderKeyCleared(ctx, userID, s.notificationMessages)
 			}
 			return &SyncResult{UserID: userID, Errors: []string{}}, ErrProviderUnauthorized
 		}

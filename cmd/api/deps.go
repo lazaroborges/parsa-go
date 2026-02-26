@@ -77,9 +77,33 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize bill repository
 	billRepo := postgres.NewBillRepository(db)
 
-	// Initialize Open Finance client and sync services
+	// Load notification message texts (needed for sync services)
+	msgs, err := messages.Load("internal/shared/messages/notifications.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load notification messages: %w", err)
+	}
+
+	// Initialize Open Finance client
 	ofClient := ofclient.NewClient()
-	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
+
+	// Initialize notification components (needed for account sync provider-key-cleared notification)
+	notificationRepo := postgres.NewNotificationRepository(db)
+	var messenger notification.Messenger
+	if cfg.Firebase.CredentialsFile != "" {
+		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
+		} else {
+			log.Println("Firebase Cloud Messaging initialized")
+			messenger = fbClient
+		}
+	} else {
+		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
+	}
+	notificationService := notification.NewService(notificationRepo, messenger)
+
+	// Initialize sync services (account sync needs notification service for provider_key_cleared)
+	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo, notificationService, msgs)
 	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, cfg.OpenFinance.TransactionSyncStartDate)
 	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
@@ -110,27 +134,6 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		}
 	}
 
-	// Load notification message texts
-	msgs, err := messages.Load("internal/shared/messages/notifications.json")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load notification messages: %w", err)
-	}
-
-	// Initialize notification components (Firebase FCM)
-	notificationRepo := postgres.NewNotificationRepository(db)
-	var messenger notification.Messenger
-	if cfg.Firebase.CredentialsFile != "" {
-		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
-		if err != nil {
-			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
-		} else {
-			log.Println("Firebase Cloud Messaging initialized")
-			messenger = fbClient
-		}
-	} else {
-		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
-	}
-	notificationService := notification.NewService(notificationRepo, messenger)
 	notificationHandler := httphandlers.NewNotificationHandler(notificationService)
 
 	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService, notificationService, msgs)

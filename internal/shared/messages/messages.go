@@ -13,7 +13,8 @@ type MessageText struct {
 }
 
 type Messages struct {
-	SyncComplete MessageText `json:"sync_complete"`
+	SyncComplete       MessageText `json:"sync_complete"`
+	ProviderKeyCleared MessageText `json:"provider_key_cleared"`
 }
 
 var (
