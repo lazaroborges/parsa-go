@@ -18,6 +18,7 @@ type MockAccountRepo struct {
 	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*account.Account, error)
 	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*account.AccountWithBank, error)
 	DeleteFunc                 func(ctx context.Context, id string) error
+	UpdateFunc                 func(ctx context.Context, id string, params account.UpdateParams) (*account.Account, error)
 	UpsertFunc                 func(ctx context.Context, params account.UpsertParams) (*account.Account, error)
 	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
@@ -25,7 +26,6 @@ type MockAccountRepo struct {
 	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
 }
 
-// GetBalanceSumBySubtype implements account.Repository.
 func (m *MockAccountRepo) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
 	if m.GetBalanceSumBySubtypeFunc != nil {
 		return m.GetBalanceSumBySubtypeFunc(ctx, userID, subtypes)
@@ -59,6 +59,13 @@ func (m *MockAccountRepo) Delete(ctx context.Context, id string) error {
 		return m.DeleteFunc(ctx, id)
 	}
 	return nil
+}
+
+func (m *MockAccountRepo) Update(ctx context.Context, id string, params account.UpdateParams) (*account.Account, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, id, params)
+	}
+	return nil, nil
 }
 
 func (m *MockAccountRepo) Upsert(ctx context.Context, params account.UpsertParams) (*account.Account, error) {
@@ -154,7 +161,7 @@ func TestHandleListAccounts(t *testing.T) {
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
-			handler.HandleAccounts(rr, req)
+			handler.HandleListAccounts(rr, req)
 
 			if rr.Code != tt.expectedStatus {
 				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.expectedStatus)
@@ -163,85 +170,19 @@ func TestHandleListAccounts(t *testing.T) {
 	}
 }
 
-func TestHandleGetAccount(t *testing.T) {
-	tests := []struct {
-		name           string
-		accountID      string
-		userID         int64
-		mockRepo       func() *MockAccountRepo
-		expectedStatus int
-	}{
-		{
-			name:      "Success",
-			accountID: "acc-1",
-			userID:    1,
-			mockRepo: func() *MockAccountRepo {
-				return &MockAccountRepo{
-					GetByIDFunc: func(ctx context.Context, id string) (*account.Account, error) {
-						return &account.Account{ID: id, UserID: 1}, nil
-					},
-				}
-			},
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:      "Not Found",
-			accountID: "acc-999",
-			userID:    1,
-			mockRepo: func() *MockAccountRepo {
-				return &MockAccountRepo{
-					GetByIDFunc: func(ctx context.Context, id string) (*account.Account, error) {
-						return nil, account.ErrAccountNotFound
-					},
-				}
-			},
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:      "Forbidden",
-			accountID: "acc-2",
-			userID:    1,
-			mockRepo: func() *MockAccountRepo {
-				return &MockAccountRepo{
-					GetByIDFunc: func(ctx context.Context, id string) (*account.Account, error) {
-						// Account belongs to user 2
-						return &account.Account{ID: id, UserID: 2}, nil
-					},
-				}
-			},
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:      "Success with Balance Sum",
-			accountID: "acc-1",
-			userID:    1,
-			mockRepo: func() *MockAccountRepo {
-				return &MockAccountRepo{
-					GetByIDFunc: func(ctx context.Context, id string) (*account.Account, error) {
-						return &account.Account{ID: id, UserID: 1}, nil
-					},
-				}
-			},
-			expectedStatus: http.StatusOK,
-		},
-	}
+func TestHandleListAccounts_MethodNotAllowed(t *testing.T) {
+	repo := &MockAccountRepo{}
+	service := account.NewService(repo)
+	handler := NewAccountHandler(service)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := tt.mockRepo()
-			service := account.NewService(repo)
-			handler := NewAccountHandler(service)
+	req, _ := http.NewRequest(http.MethodPost, "/api/accounts/", nil)
+	ctx := context.WithValue(req.Context(), middleware.UserIDKey, int64(1))
+	req = req.WithContext(ctx)
 
-			req, _ := http.NewRequest(http.MethodGet, "/api/accounts/"+tt.accountID, nil)
-			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
-			req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+	handler.HandleListAccounts(rr, req)
 
-			rr := httptest.NewRecorder()
-			handler.HandleAccounts(rr, req)
-
-			if rr.Code != tt.expectedStatus {
-				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.expectedStatus)
-			}
-		})
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusMethodNotAllowed)
 	}
 }

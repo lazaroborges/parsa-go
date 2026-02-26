@@ -14,6 +14,7 @@ type MockRepository struct {
 	ListByUserIDFunc           func(ctx context.Context, userID int64) ([]*Account, error)
 	ListByUserIDWithBankFunc   func(ctx context.Context, userID int64) ([]*AccountWithBank, error)
 	DeleteFunc                 func(ctx context.Context, id string) error
+	UpdateFunc                 func(ctx context.Context, id string, params UpdateParams) (*Account, error)
 	UpsertFunc                 func(ctx context.Context, params UpsertParams) (*Account, error)
 	ExistsFunc                 func(ctx context.Context, id string) (bool, error)
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
@@ -55,6 +56,13 @@ func (m *MockRepository) Delete(ctx context.Context, id string) error {
 		return m.DeleteFunc(ctx, id)
 	}
 	return nil
+}
+
+func (m *MockRepository) Update(ctx context.Context, id string, params UpdateParams) (*Account, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, id, params)
+	}
+	return nil, nil
 }
 
 func (m *MockRepository) Upsert(ctx context.Context, params UpsertParams) (*Account, error) {
@@ -306,3 +314,291 @@ func TestGetAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteAccount(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		accountID string
+		userID    int64
+		mock      func() *MockRepository
+		wantErr   bool
+		errType   error
+	}{
+		{
+			name:      "Success",
+			accountID: "acc-123",
+			userID:    1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					GetByIDFunc: func(ctx context.Context, id string) (*Account, error) {
+						return &Account{ID: id, UserID: 1}, nil
+					},
+					DeleteFunc: func(ctx context.Context, id string) error {
+						return nil
+					},
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:      "Not Found",
+			accountID: "acc-999",
+			userID:    1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					GetByIDFunc: func(ctx context.Context, id string) (*Account, error) {
+						return nil, ErrAccountNotFound
+					},
+				}
+			},
+			wantErr: true,
+			errType: ErrAccountNotFound,
+		},
+		{
+			name:      "Forbidden",
+			accountID: "acc-123",
+			userID:    2,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					GetByIDFunc: func(ctx context.Context, id string) (*Account, error) {
+						return &Account{ID: id, UserID: 1}, nil
+					},
+				}
+			},
+			wantErr: true,
+			errType: ErrForbidden,
+		},
+		{
+			name:      "Delete Error",
+			accountID: "acc-123",
+			userID:    1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					GetByIDFunc: func(ctx context.Context, id string) (*Account, error) {
+						return &Account{ID: id, UserID: 1}, nil
+					},
+					DeleteFunc: func(ctx context.Context, id string) error {
+						return errors.New("db error")
+					},
+				}
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.mock()
+			service := NewService(repo)
+
+			err := service.DeleteAccount(ctx, tt.accountID, tt.userID)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("DeleteAccount() expected error, got nil")
+				}
+				if tt.errType != nil && err != tt.errType {
+					t.Errorf("DeleteAccount() expected error type %v, got %v", tt.errType, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("DeleteAccount() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestListAccountsByUserID(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		userID  int64
+		mock    func() *MockRepository
+		wantErr bool
+		wantLen int
+	}{
+		{
+			name:   "Success",
+			userID: 1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					ListByUserIDFunc: func(ctx context.Context, userID int64) ([]*Account, error) {
+						return []*Account{{ID: "acc-1"}, {ID: "acc-2"}}, nil
+					},
+				}
+			},
+			wantErr: false,
+			wantLen: 2,
+		},
+		{
+			name:   "Empty List",
+			userID: 1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					ListByUserIDFunc: func(ctx context.Context, userID int64) ([]*Account, error) {
+						return []*Account{}, nil
+					},
+				}
+			},
+			wantErr: false,
+			wantLen: 0,
+		},
+		{
+			name:   "Invalid User ID",
+			userID: 0,
+			mock: func() *MockRepository {
+				return &MockRepository{}
+			},
+			wantErr: true,
+		},
+		{
+			name:   "Repository Error",
+			userID: 1,
+			mock: func() *MockRepository {
+				return &MockRepository{
+					ListByUserIDFunc: func(ctx context.Context, userID int64) ([]*Account, error) {
+						return nil, errors.New("db error")
+					},
+				}
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.mock()
+			service := NewService(repo)
+
+			accounts, err := service.ListAccountsByUserID(ctx, tt.userID)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ListAccountsByUserID() expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ListAccountsByUserID() unexpected error: %v", err)
+				}
+				if len(accounts) != tt.wantLen {
+					t.Errorf("ListAccountsByUserID() got %d accounts, want %d", len(accounts), tt.wantLen)
+				}
+			}
+		})
+	}
+}
+
+func TestUpsertAccount(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		params  UpsertParams
+		mock    func() *MockRepository
+		wantErr bool
+		errType error
+	}{
+		{
+			name: "Success",
+			params: UpsertParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "BANK",
+				Currency:    "USD",
+				Balance:     100.0,
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{
+					UpsertFunc: func(ctx context.Context, params UpsertParams) (*Account, error) {
+						return &Account{ID: params.ID}, nil
+					},
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "Default Currency Applied",
+			params: UpsertParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "BANK",
+				Currency:    "",
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{
+					UpsertFunc: func(ctx context.Context, params UpsertParams) (*Account, error) {
+						if params.Currency != "BRL" {
+							t.Errorf("Expected default currency BRL, got %s", params.Currency)
+						}
+						return &Account{ID: params.ID}, nil
+					},
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "Invalid Account Type",
+			params: UpsertParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "INVALID",
+				Currency:    "USD",
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{}
+			},
+			wantErr: true,
+			errType: ErrInvalidAccountType,
+		},
+		{
+			name: "Invalid Subtype",
+			params: UpsertParams{
+				ID:          "acc-123",
+				UserID:      1,
+				Name:        "Test Account",
+				AccountType: "BANK",
+				Currency:    "USD",
+				Subtype:     strPtr("INVALID"),
+			},
+			mock: func() *MockRepository {
+				return &MockRepository{}
+			},
+			wantErr: true,
+			errType: ErrInvalidAccountSubtype,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.mock()
+			service := NewService(repo)
+
+			acc, err := service.UpsertAccount(ctx, tt.params)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("UpsertAccount() expected error, got nil")
+				}
+				if tt.errType != nil && err != tt.errType {
+					t.Errorf("UpsertAccount() expected error type %v, got %v", tt.errType, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("UpsertAccount() unexpected error: %v", err)
+				}
+				if acc == nil {
+					t.Errorf("UpsertAccount() expected account, got nil")
+				}
+			}
+		})
+	}
+}
+
+func strPtr(s string) *string { return &s }
