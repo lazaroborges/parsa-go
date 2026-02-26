@@ -54,14 +54,17 @@ func (s *Service) GetPreferences(ctx context.Context, userID int64) (*Notificati
 
 	prefs, err := s.repo.GetPreferences(ctx, userID)
 	if err != nil {
-		// Return defaults if not found
-		return &NotificationPreference{
-			UserID:              userID,
-			BudgetsEnabled:      true,
-			GeneralEnabled:      true,
-			AccountsEnabled:     true,
-			TransactionsEnabled: true,
-		}, nil
+		if errors.Is(err, ErrPreferencesNotFound) {
+			return &NotificationPreference{
+				UserID:              userID,
+				BudgetsEnabled:      true,
+				GeneralEnabled:      true,
+				AccountsEnabled:     true,
+				TransactionsEnabled: true,
+			}, nil
+		}
+		return nil, err
+	}
 	}
 
 	return prefs, nil
