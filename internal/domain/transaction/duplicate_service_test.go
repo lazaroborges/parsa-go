@@ -283,7 +283,10 @@ func TestCheckTransactionForDuplicates_CreditTransaction(t *testing.T) {
 		TransactionDate: time.Now(),
 	}
 
-	svc.CheckTransactionForDuplicates(context.Background(), txn, 1)
+	_, _, err := svc.CheckTransactionForDuplicates(context.Background(), txn, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestCheckBatchForDuplicates_WithTransactions(t *testing.T) {
