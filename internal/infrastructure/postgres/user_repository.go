@@ -239,6 +239,22 @@ func (r *UserRepository) Update(ctx context.Context, userID int64, params user.U
 	return &user, nil
 }
 
+func (r *UserRepository) ClearProviderKey(ctx context.Context, userID int64) error {
+	query := `UPDATE users SET provider_key = NULL, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("failed to clear provider key: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
 // ListUsersWithProviderKey retrieves all users that have a provider key set
 func (r *UserRepository) ListUsersWithProviderKey(ctx context.Context) ([]*user.User, error) {
 	query := `

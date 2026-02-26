@@ -11,4 +11,5 @@ type Repository interface {
 	List(ctx context.Context) ([]*User, error)
 	Update(ctx context.Context, userID int64, params UpdateUserParams) (*User, error)
 	ListUsersWithProviderKey(ctx context.Context) ([]*User, error)
+	ClearProviderKey(ctx context.Context, userID int64) error
 }

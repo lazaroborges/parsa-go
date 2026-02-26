@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -29,6 +30,10 @@ func (j *AccountSyncJob) Execute(ctx context.Context) error {
 
 	result, err := j.syncService.SyncUserAccounts(ctx, j.userID)
 	if err != nil {
+		if errors.Is(err, openfinance.ErrProviderUnauthorized) {
+			log.Printf("User %d: Provider key invalid (401) — account sync aborted, key cleared", j.userID)
+			return fmt.Errorf("sync aborted: %w", err)
+		}
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)
 	}
@@ -81,9 +86,13 @@ func NewUserSyncJob(userID int64, accountSyncService *openfinance.AccountSyncSer
 func (j *UserSyncJob) Execute(ctx context.Context) error {
 	log.Printf("Starting full sync for user %d", j.userID)
 
-	// Run account sync first
+	// Run account sync first — acts as provider key validation gate
 	accountResult, err := j.accountSyncService.SyncUserAccounts(ctx, j.userID)
 	if err != nil {
+		if errors.Is(err, openfinance.ErrProviderUnauthorized) {
+			log.Printf("User %d: Provider key invalid (401) — full sync aborted, key cleared", j.userID)
+			return fmt.Errorf("sync aborted: %w", err)
+		}
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("account sync failed, skipping transaction sync: %w", err)
 	}

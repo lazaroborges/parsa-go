@@ -162,11 +162,9 @@ func (h *UserHandler) handleUpdateMe(w http.ResponseWriter, r *http.Request, use
 			}
 			log.Printf("Account sync completed for user %d: created=%d, updated=%d", userID, accountResult.Created, accountResult.Updated)
 
-			// After account sync, sync transactions
-			// Use full history if new accounts were created, otherwise incremental
-			hasNewAccounts := accountResult.Created > 0
-			log.Printf("Starting transaction sync for user %d after account sync (hasNewAccounts=%v)", userID, hasNewAccounts)
-			txResult, err := h.transactionSyncService.SyncUserTransactions(ctx, userID, hasNewAccounts)
+			// New key insertion — always fetch full history
+			log.Printf("Starting transaction sync for user %d after new key insertion (full history)", userID)
+			txResult, err := h.transactionSyncService.SyncUserTransactions(ctx, userID, true)
 			if err != nil {
 				log.Printf("Error syncing transactions for user %d: %v", userID, err)
 				return

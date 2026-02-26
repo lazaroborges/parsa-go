@@ -3,14 +3,20 @@ package openfinance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/user"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
 )
+
+// ErrProviderUnauthorized is returned when the provider API rejects the key (401).
+// Callers should stop the entire sync for this user.
+var ErrProviderUnauthorized = errors.New("provider key unauthorized")
 
 // SyncResult contains the results of a sync operation
 type SyncResult struct {
@@ -76,19 +82,28 @@ func (s *AccountSyncService) SyncUserAccountsWithData(ctx context.Context, userI
 	return result, nil
 }
 
-// SyncUserAccounts syncs accounts for a specific user by fetching from API
+// SyncUserAccounts syncs accounts for a specific user by fetching from API.
+// Returns ErrProviderUnauthorized if the provider rejects the API key (401),
+// in which case the key is cleared and callers should stop the entire sync.
 func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64) (*SyncResult, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.ProviderKey == nil || *user.ProviderKey == "" {
+	if u.ProviderKey == nil || *u.ProviderKey == "" {
 		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("user has no provider key")
 	}
 
-	accountResp, err := s.client.GetAccounts(ctx, *user.ProviderKey)
+	accountResp, statusCode, err := s.client.GetAccountsWithStatus(ctx, *u.ProviderKey)
 	if err != nil {
+		if statusCode == http.StatusUnauthorized {
+			log.Printf("User %d: Provider returned 401 — clearing provider_key and stopping sync", userID)
+			if clearErr := s.userRepo.ClearProviderKey(ctx, userID); clearErr != nil {
+				log.Printf("User %d: Failed to clear provider key: %v", userID, clearErr)
+			}
+			return &SyncResult{UserID: userID, Errors: []string{}}, ErrProviderUnauthorized
+		}
 		return &SyncResult{UserID: userID, Errors: []string{}}, fmt.Errorf("failed to fetch accounts from API: %w", err)
 	}
 
