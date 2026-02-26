@@ -144,6 +144,6 @@ func (p *NotificationPreference) IsCategoryEnabled(category string) bool {
 	case CategoryTransactions:
 		return p.TransactionsEnabled
 	default:
-		return true
+		return false
 	}
 }
