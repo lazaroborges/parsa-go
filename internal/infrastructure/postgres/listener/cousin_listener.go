@@ -10,7 +10,14 @@ import (
 	"github.com/lib/pq"
 
 	"parsa/internal/domain/cousinrule"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var listenerTracer = otel.Tracer("parsa/listener")
 
 const (
 	channelName       = "cousin_assigned"
@@ -148,6 +155,15 @@ func (l *CousinListener) handleNotification(ctx context.Context, notification *p
 }
 
 func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNotification) {
+	ctx, span := listenerTracer.Start(ctx, "cousin.apply_rule",
+		trace.WithAttributes(
+			attribute.String("transaction_id", payload.TransactionID),
+			attribute.Int64("cousin_id", payload.CousinID),
+			attribute.String("account_id", payload.AccountID),
+		),
+	)
+	defer span.End()
+
 	// Get user_id from account
 	var userID int64
 	err := l.db.QueryRowContext(ctx,
@@ -156,6 +172,8 @@ func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNoti
 	).Scan(&userID)
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to get user_id")
 		log.Printf("Failed to get user_id for account %s: %v", payload.AccountID, err)
 		return
 	}
@@ -163,18 +181,25 @@ func (l *CousinListener) applyCousinRule(ctx context.Context, payload CousinNoti
 	// Find matching rule
 	rule, err := l.findMatchingRule(ctx, userID, payload.CousinID, payload.TxType)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to find rule")
 		log.Printf("Failed to find rule for cousin %d: %v", payload.CousinID, err)
 		return
 	}
 
 	if rule == nil {
+		span.SetAttributes(attribute.Bool("rule.matched", false))
 		log.Printf("No matching cousin rule found")
 		return
 	}
 
+	span.SetAttributes(attribute.Bool("rule.matched", true))
+
 	// Apply the rule to the transaction
 	err = l.applyRuleToTransaction(ctx, payload.TransactionID, rule)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to apply rule")
 		log.Printf("Failed to apply rule to transaction %s: %v", payload.TransactionID, err)
 		return
 	}

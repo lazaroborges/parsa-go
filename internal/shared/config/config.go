@@ -9,14 +9,15 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig
-	Database   DatabaseConfig
-	OAuth      OAuthConfig
-	JWT        JWTConfig
-	Encryption EncryptionConfig
-	Scheduler  SchedulerConfig
-	TLS        TLSConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	OAuth       OAuthConfig
+	JWT         JWTConfig
+	Encryption  EncryptionConfig
+	Scheduler   SchedulerConfig
+	TLS         TLSConfig
 	OpenFinance OpenFinanceConfig
+	Telemetry   TelemetryConfig
 }
 
 type ServerConfig struct {
@@ -80,6 +81,12 @@ type TLSConfig struct {
 
 type OpenFinanceConfig struct {
 	TransactionSyncStartDate string
+}
+
+type TelemetryConfig struct {
+	Enabled      bool
+	ServiceName  string
+	OTLPEndpoint string
 }
 
 func Load() (*Config, error) {
@@ -191,6 +198,11 @@ func Load() (*Config, error) {
 		},
 		OpenFinance: OpenFinanceConfig{
 			TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
+		},
+		Telemetry: TelemetryConfig{
+			Enabled:      getBoolEnv("OTEL_ENABLED", false),
+			ServiceName:  getEnv("OTEL_SERVICE_NAME", "parsa-api"),
+			OTLPEndpoint: getEnv("OTEL_EXPORTER_ENDPOINT", "localhost:4318"),
 		},
 	}
 

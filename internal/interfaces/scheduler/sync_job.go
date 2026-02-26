@@ -7,6 +7,10 @@ import (
 	"strconv"
 
 	"parsa/internal/domain/openfinance"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // AccountSyncJob implements the Job interface for syncing user accounts
@@ -25,19 +29,32 @@ func NewAccountSyncJob(userID int64, syncService *openfinance.AccountSyncService
 
 // Execute runs the account sync job
 func (j *AccountSyncJob) Execute(ctx context.Context) error {
+	ctx, span := jobTracer.Start(ctx, "sync.accounts",
+		trace.WithAttributes(attribute.Int64("user.id", j.userID)),
+	)
+	defer span.End()
+
 	log.Printf("Starting account sync for user %d", j.userID)
 
 	result, err := j.syncService.SyncUserAccounts(ctx, j.userID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.Int("sync.created", result.Created),
+		attribute.Int("sync.updated", result.Updated),
+		attribute.Int("sync.errors", len(result.Errors)),
+	)
+
 	// Log results
 	if len(result.Errors) > 0 {
+		span.SetStatus(codes.Error, fmt.Sprintf("sync completed with %d errors", len(result.Errors)))
 		log.Printf("Account sync for user %d completed with errors: Created=%d, Updated=%d, Errors=%d",
 			j.userID, result.Created, result.Updated, len(result.Errors))
-		// Return error to mark for retry
 		return fmt.Errorf("sync completed with %d errors", len(result.Errors))
 	}
 
@@ -79,11 +96,34 @@ func NewUserSyncJob(userID int64, accountSyncService *openfinance.AccountSyncSer
 // Execute runs account sync first, then transaction sync, then bill sync on success.
 // Transaction sync uses full history if new accounts were created, otherwise last 7 days.
 func (j *UserSyncJob) Execute(ctx context.Context) error {
+	ctx, span := jobTracer.Start(ctx, "sync.user",
+		trace.WithAttributes(attribute.Int64("user.id", j.userID)),
+	)
+	defer span.End()
+
 	log.Printf("Starting full sync for user %d", j.userID)
 
-	// Run account sync first
-	accountResult, err := j.accountSyncService.SyncUserAccounts(ctx, j.userID)
+	// Phase 1: Account sync
+	accountResult, err := func() (*openfinance.SyncResult, error) {
+		ctx, s := jobTracer.Start(ctx, "sync.user.accounts")
+		defer s.End()
+
+		result, err := j.accountSyncService.SyncUserAccounts(ctx, j.userID)
+		if err != nil {
+			s.RecordError(err)
+			s.SetStatus(codes.Error, err.Error())
+			return nil, err
+		}
+		s.SetAttributes(
+			attribute.Int("sync.created", result.Created),
+			attribute.Int("sync.updated", result.Updated),
+			attribute.Int("sync.errors", len(result.Errors)),
+		)
+		return result, nil
+	}()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "account sync failed")
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("account sync failed, skipping transaction sync: %w", err)
 	}
@@ -91,12 +131,29 @@ func (j *UserSyncJob) Execute(ctx context.Context) error {
 	log.Printf("Account sync for user %d: Created=%d, Updated=%d, Errors=%d",
 		j.userID, accountResult.Created, accountResult.Updated, len(accountResult.Errors))
 
-	// Determine if new accounts were created
+	// Phase 2: Transaction sync
 	hasNewAccounts := accountResult.Created > 0
+	txResult, err := func() (*openfinance.TransactionSyncResult, error) {
+		ctx, s := jobTracer.Start(ctx, "sync.user.transactions")
+		defer s.End()
 
-	// Run transaction sync with appropriate date range
-	txResult, err := j.txSyncService.SyncUserTransactions(ctx, j.userID, hasNewAccounts)
+		result, err := j.txSyncService.SyncUserTransactions(ctx, j.userID, hasNewAccounts)
+		if err != nil {
+			s.RecordError(err)
+			s.SetStatus(codes.Error, err.Error())
+			return nil, err
+		}
+		s.SetAttributes(
+			attribute.Int("sync.created", result.Created),
+			attribute.Int("sync.updated", result.Updated),
+			attribute.Int("sync.skipped", result.Skipped),
+			attribute.Int("sync.errors", len(result.Errors)),
+		)
+		return result, nil
+	}()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "transaction sync failed")
 		log.Printf("Transaction sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("transaction sync failed: %w", err)
 	}
@@ -104,9 +161,11 @@ func (j *UserSyncJob) Execute(ctx context.Context) error {
 	log.Printf("Transaction sync for user %d: Created=%d, Updated=%d, Skipped=%d, Errors=%d",
 		j.userID, txResult.Created, txResult.Updated, txResult.Skipped, len(txResult.Errors))
 
-	// Run bill sync after transaction sync
+	// Phase 3: Bill sync
 	billJob := NewBillSyncJob(j.userID, j.billSyncService)
 	if err := billJob.Execute(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "bill sync failed")
 		return fmt.Errorf("bill sync failed: %w", err)
 	}
 
@@ -140,20 +199,34 @@ func NewTransactionSyncJob(userID int64, syncService *openfinance.TransactionSyn
 // Execute runs the transaction sync job.
 // When run standalone, uses incremental sync (last 7 days).
 func (j *TransactionSyncJob) Execute(ctx context.Context) error {
+	ctx, span := jobTracer.Start(ctx, "sync.transactions",
+		trace.WithAttributes(attribute.Int64("user.id", j.userID)),
+	)
+	defer span.End()
+
 	log.Printf("Starting transaction sync for user %d", j.userID)
 
 	// Standalone execution uses incremental sync
 	result, err := j.syncService.SyncUserTransactions(ctx, j.userID, false)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.Printf("Transaction sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.Int("sync.created", result.Created),
+		attribute.Int("sync.updated", result.Updated),
+		attribute.Int("sync.skipped", result.Skipped),
+		attribute.Int("sync.errors", len(result.Errors)),
+	)
+
 	// Log results
 	if len(result.Errors) > 0 {
+		span.SetStatus(codes.Error, fmt.Sprintf("sync completed with %d errors", len(result.Errors)))
 		log.Printf("Transaction sync for user %d completed with errors: Created=%d, Updated=%d, Skipped=%d, Errors=%d",
 			j.userID, result.Created, result.Updated, result.Skipped, len(result.Errors))
-		// Return error to mark for retry
 		return fmt.Errorf("sync completed with %d errors", len(result.Errors))
 	}
 
@@ -189,19 +262,33 @@ func NewBillSyncJob(userID int64, syncService *openfinance.BillSyncService) *Bil
 
 // Execute runs the bill sync job
 func (j *BillSyncJob) Execute(ctx context.Context) error {
+	ctx, span := jobTracer.Start(ctx, "sync.bills",
+		trace.WithAttributes(attribute.Int64("user.id", j.userID)),
+	)
+	defer span.End()
+
 	log.Printf("Starting bill sync for user %d", j.userID)
 
 	result, err := j.syncService.SyncUserBills(ctx, j.userID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.Printf("Bill sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.Int("sync.created", result.Created),
+		attribute.Int("sync.updated", result.Updated),
+		attribute.Int("sync.skipped", result.Skipped),
+		attribute.Int("sync.errors", len(result.Errors)),
+	)
+
 	// Log results
 	if len(result.Errors) > 0 {
+		span.SetStatus(codes.Error, fmt.Sprintf("sync completed with %d errors", len(result.Errors)))
 		log.Printf("Bill sync for user %d completed with errors: Created=%d, Updated=%d, Skipped=%d, Errors=%d",
 			j.userID, result.Created, result.Updated, result.Skipped, len(result.Errors))
-		// Return error to mark for retry
 		return fmt.Errorf("sync completed with %d errors", len(result.Errors))
 	}
 

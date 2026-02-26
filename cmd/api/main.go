@@ -10,6 +10,7 @@ import (
 
 	"parsa/internal/interfaces/scheduler"
 	"parsa/internal/shared/config"
+	"parsa/internal/shared/telemetry"
 )
 
 func main() {
@@ -27,12 +28,28 @@ func run() error {
 		return err
 	}
 
+	// Initialize telemetry if enabled
+	if cfg.Telemetry.Enabled {
+		tp, err := telemetry.Init(context.Background(), telemetry.Config{
+			ServiceName:  cfg.Telemetry.ServiceName,
+			OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+		})
+		if err != nil {
+			return err
+		}
+		defer tp.Shutdown(context.Background())
+		log.Printf("OpenTelemetry enabled (endpoint: %s)", cfg.Telemetry.OTLPEndpoint)
+	}
+
 	// Initialize dependencies
 	deps, err := NewDependencies(cfg)
 	if err != nil {
 		return err
 	}
 	defer deps.Close()
+
+	// Register DB pool metrics (no-op if telemetry is disabled)
+	deps.DB.RegisterMetrics()
 
 	// Setup routes and middleware
 	handler := SetupRoutes(deps, cfg)

@@ -6,6 +6,20 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	jobTracer          = otel.Tracer("parsa/scheduler")
+	jobMeter           = otel.Meter("parsa/scheduler")
+	jobDuration, _     = jobMeter.Float64Histogram("scheduler.job.duration", metric.WithDescription("Job execution duration in seconds"), metric.WithUnit("s"))
+	jobTotal, _        = jobMeter.Int64Counter("scheduler.job.total", metric.WithDescription("Total jobs executed by status"))
+	jobQueueDropped, _ = jobMeter.Int64Counter("scheduler.job.queue_dropped", metric.WithDescription("Jobs dropped due to full queue"))
 )
 
 // WorkerPool manages a pool of concurrent workers that process jobs.
@@ -87,7 +101,7 @@ func (wp *WorkerPool) worker(id int) {
 	}
 }
 
-// processJob executes a single job with error handling and logging.
+// processJob executes a single job with error handling, logging, and telemetry.
 func (wp *WorkerPool) processJob(workerID int, job Job) {
 	log.Printf("Worker %d: Processing %s for user %s", workerID, job.Description(), job.UserID())
 
@@ -95,13 +109,30 @@ func (wp *WorkerPool) processJob(workerID int, job Job) {
 	ctx, cancel := context.WithTimeout(wp.ctx, 120*time.Second)
 	defer cancel()
 
+	ctx, span := jobTracer.Start(ctx, "job.execute",
+		trace.WithAttributes(
+			attribute.Int("worker.id", workerID),
+			attribute.String("job.description", job.Description()),
+			attribute.String("job.user_id", job.UserID()),
+		),
+	)
+	defer span.End()
+
+	start := time.Now()
+
 	// Execute the job
 	if err := job.Execute(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		jobTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "error")))
+		jobDuration.Record(ctx, time.Since(start).Seconds())
 		log.Printf("Worker %d: Error processing %s for user %s: %v",
 			workerID, job.Description(), job.UserID(), err)
 		return
 	}
 
+	jobTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "success")))
+	jobDuration.Record(ctx, time.Since(start).Seconds())
 	log.Printf("Worker %d: Successfully completed %s for user %s",
 		workerID, job.Description(), job.UserID())
 }
@@ -118,6 +149,7 @@ func (wp *WorkerPool) Submit(job Job) error {
 		return nil
 	default:
 		// Queue is full - could also block here, but we return error for visibility
+		jobQueueDropped.Add(context.Background(), 1)
 		log.Printf("Warning: Job queue full, dropping job for user %s", job.UserID())
 		return fmt.Errorf("job queue full, dropping job for user %s", job.UserID())
 	}

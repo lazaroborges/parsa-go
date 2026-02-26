@@ -7,6 +7,9 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // ScheduleTime represents a specific time of day when the scheduler should run.
@@ -181,11 +184,18 @@ func (s *Scheduler) runJobs() {
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	defer cancel()
 
+	ctx, span := jobTracer.Start(ctx, "scheduler.run_jobs")
+	defer span.End()
+
 	jobs, err := s.jobProvider(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.Printf("Scheduler: Failed to fetch jobs: %v", err)
 		return
 	}
+
+	span.SetAttributes(attribute.Int("scheduler.job_count", len(jobs)))
 
 	if len(jobs) == 0 {
 		log.Println("Scheduler: No jobs to process")

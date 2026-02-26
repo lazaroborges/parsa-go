@@ -7,6 +7,9 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type DB struct {
@@ -37,4 +40,35 @@ func New(connStr string) (*DB, error) {
 
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+// RegisterMetrics registers observable gauges for the database connection pool.
+// Safe to call even when telemetry is disabled (instruments become no-ops).
+func (db *DB) RegisterMetrics() {
+	m := otel.Meter("parsa/db")
+
+	openConns, _ := m.Int64ObservableGauge("db.pool.open_connections",
+		metric.WithDescription("Number of open database connections"),
+	)
+	inUse, _ := m.Int64ObservableGauge("db.pool.in_use",
+		metric.WithDescription("Number of in-use database connections"),
+	)
+	idle, _ := m.Int64ObservableGauge("db.pool.idle",
+		metric.WithDescription("Number of idle database connections"),
+	)
+	waitCount, _ := m.Int64ObservableCounter("db.pool.wait_count",
+		metric.WithDescription("Total wait count for database connections"),
+	)
+
+	m.RegisterCallback(
+		func(_ context.Context, o metric.Observer) error {
+			stats := db.Stats()
+			o.ObserveInt64(openConns, int64(stats.OpenConnections))
+			o.ObserveInt64(inUse, int64(stats.InUse))
+			o.ObserveInt64(idle, int64(stats.Idle))
+			o.ObserveInt64(waitCount, int64(stats.WaitCount))
+			return nil
+		},
+		openConns, inUse, idle, waitCount,
+	)
 }
