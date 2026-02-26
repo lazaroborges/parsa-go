@@ -1,11 +1,13 @@
 package messages
 
 import (
+	_ "embed"
 	"encoding/json"
-	"fmt"
-	"os"
 	"sync"
 )
+
+//go:embed notifications.json
+var notificationsJSON []byte
 
 type MessageText struct {
 	Title string `json:"title"`
@@ -23,17 +25,12 @@ var (
 	loadErr  error
 )
 
-// Load reads the notifications JSON file and caches the result.
+// Load parses the embedded notifications JSON and caches the result.
 // Safe to call from multiple goroutines.
-func Load(path string) (*Messages, error) {
+func Load() (*Messages, error) {
 	loadOnce.Do(func() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			loadErr = fmt.Errorf("failed to read messages file: %w", err)
-			return
-		}
-		if err := json.Unmarshal(data, &loaded); err != nil {
-			loadErr = fmt.Errorf("failed to parse messages file: %w", err)
+		if err := json.Unmarshal(notificationsJSON, &loaded); err != nil {
+			loadErr = err
 		}
 	})
 	if loadErr != nil {

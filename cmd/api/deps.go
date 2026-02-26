@@ -78,7 +78,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	billRepo := postgres.NewBillRepository(db)
 
 	// Load notification message texts (needed for sync services)
-	msgs, err := messages.Load("internal/shared/messages/notifications.json")
+	msgs, err := messages.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load notification messages: %w", err)
 	}
