@@ -84,6 +84,7 @@ type BatchCreateRequest struct {
 // PatchTransactionItem represents a single transaction patch with ID
 type PatchTransactionItem struct {
 	ID          string    `json:"id"`
+	Amount      *float64  `json:"amount,omitempty"` // stored as absolute value regardless of sign
 	Description *string   `json:"description,omitempty"`
 	Category    *string   `json:"category,omitempty"`
 	Considered  *bool     `json:"considered,omitempty"`
@@ -677,8 +678,16 @@ func (h *TransactionHandler) handleBatchPatch(w http.ResponseWriter, r *http.Req
 			continue
 		}
 
+		// Normalize amount to absolute value when provided
+		var amount *float64
+		if patchReq.Amount != nil {
+			absVal := math.Abs(*patchReq.Amount)
+			amount = &absVal
+		}
+
 		// Update transaction
 		updatedTxn, err := h.transactionRepo.Update(r.Context(), patchReq.ID, transaction.UpdateTransactionParams{
+			Amount:      amount,
 			Description: patchReq.Description,
 			Category:    patchReq.Category,
 			Considered:  patchReq.Considered,

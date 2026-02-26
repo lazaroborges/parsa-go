@@ -242,6 +242,7 @@ func (r *TransactionRepository) Update(ctx context.Context, id string, params tr
 		    considered = COALESCE($7, considered),
 		    notes = COALESCE($8, notes),
 		    manipulated = CASE
+		        WHEN $1 IS NOT NULL AND $1 IS DISTINCT FROM amount THEN true
 		        WHEN $2 IS NOT NULL AND $2 IS DISTINCT FROM description THEN true
 		        WHEN $3 IS NOT NULL AND $3 IS DISTINCT FROM category THEN true
 		        ELSE manipulated
