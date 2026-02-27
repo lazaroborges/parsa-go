@@ -1,0 +1,10 @@
+{
+  "sync_complete": {
+    "title": "Sincronização concluída",
+    "body": "Suas contas e transações foram sincronizadas com sucesso. Ainda vamos enriquecer as transações com mais dados e te informaremos quando tudo estiver pronto para revisão."
+  },
+  "provider_key_cleared": {
+    "title": "Conexão bancária desconectada",
+    "body": "Sua chave de acesso Pierre foi revogada. Por favor, atualize-a para continuar sincronizando suas contas e transações."
+  }
+}

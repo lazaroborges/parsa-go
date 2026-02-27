@@ -2,18 +2,22 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/cousinrule"
+	"parsa/internal/domain/notification"
 	"parsa/internal/domain/openfinance"
 	"parsa/internal/infrastructure/crypto"
+	fcmclient "parsa/internal/infrastructure/firebase"
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/infrastructure/postgres"
 	"parsa/internal/infrastructure/postgres/listener"
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/shared/auth"
 	"parsa/internal/shared/config"
+	"parsa/internal/shared/messages"
 )
 
 // Dependencies holds all initialized application components.
@@ -21,12 +25,13 @@ type Dependencies struct {
 	DB *postgres.DB
 
 	// Handlers
-	AuthHandler        *httphandlers.AuthHandler
-	UserHandler        *httphandlers.UserHandler
-	AccountHandler     *httphandlers.AccountHandler
-	TransactionHandler *httphandlers.TransactionHandler
-	TagHandler         *httphandlers.TagHandler
-	CousinRuleHandler  *httphandlers.CousinRuleHandler
+	AuthHandler         *httphandlers.AuthHandler
+	UserHandler         *httphandlers.UserHandler
+	AccountHandler      *httphandlers.AccountHandler
+	TransactionHandler  *httphandlers.TransactionHandler
+	TagHandler          *httphandlers.TagHandler
+	CousinRuleHandler   *httphandlers.CousinRuleHandler
+	NotificationHandler *httphandlers.NotificationHandler
 
 	// Auth
 	JWT *auth.JWT
@@ -72,9 +77,35 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize bill repository
 	billRepo := postgres.NewBillRepository(db)
 
-	// Initialize Open Finance client and sync services
+	// Load notification message texts (needed for sync services)
+	msgs, err := messages.Load()
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to load notification messages: %w", err)
+	}
+
+	// Initialize Open Finance client
 	ofClient := ofclient.NewClient()
-	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo)
+
+	// Initialize notification components (needed for account sync provider-key-cleared notification)
+	notificationRepo := postgres.NewNotificationRepository(db)
+	var messenger notification.Messenger
+	if cfg.Firebase.CredentialsFile != "" {
+		deactivator := fcmclient.TokenDeactivator(notificationRepo.DeactivateToken)
+		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile, deactivator)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
+		} else {
+			log.Println("Firebase Cloud Messaging initialized")
+			messenger = fbClient
+		}
+	} else {
+		log.Println("FIREBASE_CREDENTIALS_FILE not set, notifications disabled")
+	}
+	notificationService := notification.NewService(notificationRepo, messenger)
+
+	// Initialize sync services (account sync needs notification service for provider_key_cleared)
+	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo, notificationService, msgs)
 	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, cfg.OpenFinance.TransactionSyncStartDate)
 	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
@@ -105,7 +136,9 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		}
 	}
 
-	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService)
+	notificationHandler := httphandlers.NewNotificationHandler(notificationService)
+
+	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService, notificationService, msgs)
 	accountHandler := httphandlers.NewAccountHandler(accountService)
 	tagRepo := postgres.NewTagRepository(db)
 	tagHandler := httphandlers.NewTagHandler(tagRepo)
@@ -130,6 +163,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		TransactionHandler:     transactionHandler,
 		TagHandler:             tagHandler,
 		CousinRuleHandler:      cousinRuleHandler,
+		NotificationHandler:    notificationHandler,
 		JWT:                    jwt,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,

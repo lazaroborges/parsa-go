@@ -16,9 +16,10 @@ type User struct {
 	AvatarURL        *string   `json:"avatarUrl,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
-	ProviderKey      *string   `json:"-"`                          // Nullable, not exposed in API
-	BalanceAvailable *float64  `json:"balanceAvailable,omitempty"` // Calculated field
-	BalanceTotal     *float64  `json:"balanceTotal,omitempty"`     // Calculated field
+	ProviderKey                *string   `json:"-"`                          // Nullable, not exposed in API
+	HasFinishedOpenfinanceFlow bool      `json:"hasFinishedOpenfinanceFlow"`
+	BalanceAvailable           *float64  `json:"balanceAvailable,omitempty"` // Calculated field
+	BalanceTotal               *float64  `json:"balanceTotal,omitempty"`     // Calculated field
 }
 
 type CreateUserParams struct {

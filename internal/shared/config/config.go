@@ -15,8 +15,9 @@ type Config struct {
 	JWT        JWTConfig
 	Encryption EncryptionConfig
 	Scheduler  SchedulerConfig
-	TLS        TLSConfig
+	TLS         TLSConfig
 	OpenFinance OpenFinanceConfig
+	Firebase    FirebaseConfig
 }
 
 type ServerConfig struct {
@@ -80,6 +81,10 @@ type TLSConfig struct {
 
 type OpenFinanceConfig struct {
 	TransactionSyncStartDate string
+}
+
+type FirebaseConfig struct {
+	CredentialsFile string
 }
 
 func Load() (*Config, error) {
@@ -191,6 +196,9 @@ func Load() (*Config, error) {
 		},
 		OpenFinance: OpenFinanceConfig{
 			TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
+		},
+		Firebase: FirebaseConfig{
+			CredentialsFile: getEnv("FIREBASE_CREDENTIALS_FILE", ""),
 		},
 	}
 
