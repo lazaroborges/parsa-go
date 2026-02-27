@@ -108,8 +108,10 @@ func (s *AccountSyncService) SyncUserAccounts(ctx context.Context, userID int64)
 		if statusCode == http.StatusUnauthorized {
 			log.Printf("User %d: Provider returned 401 — clearing provider_key and stopping sync", userID)
 			if clearErr := s.userRepo.ClearProviderKey(ctx, userID); clearErr != nil {
-				log.Printf("User %d: Failed to clear provider key: %v", userID, clearErr)
-			} else if s.notificationService != nil && s.notificationMessages != nil {
+				return &SyncResult{UserID: userID, Errors: []string{}},
+					fmt.Errorf("provider unauthorized and failed to clear provider key: %w", clearErr)
+			}
+			if s.notificationService != nil && s.notificationMessages != nil {
 				s.notificationService.SendProviderKeyCleared(ctx, userID, s.notificationMessages)
 			}
 			return &SyncResult{UserID: userID, Errors: []string{}}, ErrProviderUnauthorized
