@@ -17,6 +17,7 @@ type Config struct {
 	Scheduler   SchedulerConfig
 	TLS         TLSConfig
 	OpenFinance OpenFinanceConfig
+	Firebase    FirebaseConfig
 	Telemetry   TelemetryConfig
 }
 
@@ -81,6 +82,10 @@ type TLSConfig struct {
 
 type OpenFinanceConfig struct {
 	TransactionSyncStartDate string
+}
+
+type FirebaseConfig struct {
+	CredentialsFile string
 }
 
 type TelemetryConfig struct {
@@ -198,6 +203,9 @@ func Load() (*Config, error) {
 		},
 		OpenFinance: OpenFinanceConfig{
 			TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
+		},
+		Firebase: FirebaseConfig{
+			CredentialsFile: getEnv("FIREBASE_CREDENTIALS_FILE", ""),
 		},
 		Telemetry: TelemetryConfig{
 			Enabled:      getBoolEnv("OTEL_ENABLED", false),

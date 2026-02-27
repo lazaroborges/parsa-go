@@ -3,6 +3,7 @@ package openfinance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -11,6 +12,10 @@ import (
 	ofclient "parsa/internal/infrastructure/openfinance"
 	"parsa/internal/models"
 )
+
+// ErrProviderUnauthorized is returned when the provider API rejects the key (401).
+// Callers should stop the entire sync for this user.
+var ErrProviderUnauthorized = errors.New("provider key unauthorized")
 
 // SyncResult contains the results of a sync operation
 type SyncResult struct {

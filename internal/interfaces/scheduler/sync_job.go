@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -40,6 +41,10 @@ func (j *AccountSyncJob) Execute(ctx context.Context) error {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		if errors.Is(err, openfinance.ErrProviderUnauthorized) {
+			log.Printf("User %d: Provider key invalid (401) — account sync aborted, key cleared", j.userID)
+			return fmt.Errorf("sync aborted: %w", err)
+		}
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("sync failed: %w", err)
 	}
@@ -103,7 +108,7 @@ func (j *UserSyncJob) Execute(ctx context.Context) error {
 
 	log.Printf("Starting full sync for user %d", j.userID)
 
-	// Phase 1: Account sync
+	// Phase 1: Account sync — acts as provider key validation gate
 	accountResult, err := func() (*openfinance.SyncResult, error) {
 		ctx, s := jobTracer.Start(ctx, "sync.user.accounts")
 		defer s.End()
@@ -124,6 +129,10 @@ func (j *UserSyncJob) Execute(ctx context.Context) error {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "account sync failed")
+		if errors.Is(err, openfinance.ErrProviderUnauthorized) {
+			log.Printf("User %d: Provider key invalid (401) — full sync aborted, key cleared", j.userID)
+			return fmt.Errorf("sync aborted: %w", err)
+		}
 		log.Printf("Account sync failed for user %d: %v", j.userID, err)
 		return fmt.Errorf("account sync failed, skipping transaction sync: %w", err)
 	}
