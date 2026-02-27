@@ -91,7 +91,8 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	notificationRepo := postgres.NewNotificationRepository(db)
 	var messenger notification.Messenger
 	if cfg.Firebase.CredentialsFile != "" {
-		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile)
+		deactivator := fcmclient.TokenDeactivator(notificationRepo.DeactivateToken)
+		fbClient, err := fcmclient.NewClient(context.Background(), cfg.Firebase.CredentialsFile, deactivator)
 		if err != nil {
 			log.Printf("Warning: Failed to initialize Firebase: %v (notifications disabled)", err)
 		} else {

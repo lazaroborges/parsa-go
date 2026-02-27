@@ -92,7 +92,7 @@ func (h *NotificationHandler) HandleNotifications(w http.ResponseWriter, r *http
 		page = 1
 	}
 	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-	if perPage < 1 {
+	if perPage < 1 || perPage > 100 {
 		perPage = 20
 	}
 
@@ -127,7 +127,7 @@ func (h *NotificationHandler) HandleNotifications(w http.ResponseWriter, r *http
 	json.NewEncoder(w).Encode(resp)
 }
 
-// HandleNotificationByID handles PUT/DELETE /api/notifications/{id}
+// HandleNotificationByID handles PUT /api/notifications/{id} (mark as opened)
 func (h *NotificationHandler) HandleNotificationByID(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {

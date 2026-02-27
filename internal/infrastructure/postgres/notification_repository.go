@@ -127,7 +127,7 @@ func (r *NotificationRepository) ReassignToken(ctx context.Context, token string
 }
 
 // GetPreferences returns notification preferences for a user.
-// Returns sql.ErrNoRows if no preferences exist.
+// Returns notification.ErrPreferencesNotFound if no preferences exist.
 func (r *NotificationRepository) GetPreferences(ctx context.Context, userID int64) (*notification.NotificationPreference, error) {
 	query := `
 		SELECT id, user_id, budgets_enabled, general_enabled, accounts_enabled, transactions_enabled, updated_at

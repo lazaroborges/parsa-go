@@ -35,10 +35,13 @@ func (s *Service) RegisterDevice(ctx context.Context, params CreateDeviceTokenPa
 	// Ensure notification preferences exist for this user
 	_, err = s.repo.GetPreferences(ctx, params.UserID)
 	if err != nil {
-		// Create default preferences
-		_, err = s.repo.UpsertPreferences(ctx, params.UserID, UpdatePreferenceParams{})
-		if err != nil {
-			log.Printf("Warning: failed to create default notification preferences for user %d: %v", params.UserID, err)
+		if errors.Is(err, ErrPreferencesNotFound) {
+			_, err = s.repo.UpsertPreferences(ctx, params.UserID, UpdatePreferenceParams{})
+			if err != nil {
+				log.Printf("Warning: failed to create default notification preferences for user %d: %v", params.UserID, err)
+			}
+		} else {
+			log.Printf("Warning: failed to check notification preferences for user %d: %v", params.UserID, err)
 		}
 	}
 
