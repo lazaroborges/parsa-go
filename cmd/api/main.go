@@ -39,7 +39,13 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer shutdownTelemetry(context.Background())
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := shutdownTelemetry(ctx); err != nil {
+				log.Printf("Telemetry shutdown error: %v", err)
+			}
+		}()
 	}
 
 	// Initialize dependencies
