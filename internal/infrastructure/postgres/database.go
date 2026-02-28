@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/otel"
@@ -49,7 +51,8 @@ func (db *DB) Close() error {
 func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	ctx, span := dbTracer.Start(ctx, "db.Query", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
-		attribute.String("db.statement", truncateQuery(query)),
+		attribute.String("db.operation", extractSQLVerb(query)),
+		attribute.String("db.statement", sanitizeQuery(query)),
 	))
 	defer span.End()
 
@@ -87,7 +90,8 @@ func (r *tracedRow) Scan(dest ...any) error {
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *tracedRow {
 	ctx, span := dbTracer.Start(ctx, "db.QueryRow", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
-		attribute.String("db.statement", truncateQuery(query)),
+		attribute.String("db.operation", extractSQLVerb(query)),
+		attribute.String("db.statement", sanitizeQuery(query)),
 	))
 
 	return &tracedRow{
@@ -100,7 +104,8 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *t
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	ctx, span := dbTracer.Start(ctx, "db.Exec", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
-		attribute.String("db.statement", truncateQuery(query)),
+		attribute.String("db.operation", extractSQLVerb(query)),
+		attribute.String("db.statement", sanitizeQuery(query)),
 	))
 	defer span.End()
 
@@ -112,9 +117,69 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.R
 	return result, err
 }
 
-func truncateQuery(q string) string {
-	if len(q) > 256 {
-		return q[:256] + "..."
+// sanitizeQuery replaces string literals and bare numeric literals with '?'
+// so that sensitive values (PII, tokens, etc.) are never stored in traces.
+// Parameterized queries using $1, $2, ... are left as-is since they carry no data.
+func sanitizeQuery(q string) string {
+	var b strings.Builder
+	b.Grow(len(q))
+
+	i := 0
+	for i < len(q) {
+		ch := q[i]
+
+		// Replace quoted string literals: 'value' → '?'
+		if ch == '\'' {
+			b.WriteString("'?'")
+			i++
+			for i < len(q) {
+				if q[i] == '\'' {
+					if i+1 < len(q) && q[i+1] == '\'' {
+						i += 2 // escaped quote ''
+						continue
+					}
+					i++ // closing quote
+					break
+				}
+				i++
+			}
+			continue
+		}
+
+		// Replace bare numeric literals that aren't $N parameters
+		if unicode.IsDigit(rune(ch)) && (i == 0 || !isIdentChar(q[i-1])) {
+			// Check it's not a $N placeholder
+			if i > 0 && q[i-1] == '$' {
+				b.WriteByte(ch)
+				i++
+				continue
+			}
+			b.WriteByte('?')
+			for i < len(q) && (unicode.IsDigit(rune(q[i])) || q[i] == '.') {
+				i++
+			}
+			continue
+		}
+
+		b.WriteByte(ch)
+		i++
 	}
-	return q
+
+	s := b.String()
+	if len(s) > 256 {
+		return s[:256] + "..."
+	}
+	return s
+}
+
+func isIdentChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$'
+}
+
+func extractSQLVerb(q string) string {
+	q = strings.TrimSpace(q)
+	if idx := strings.IndexByte(q, ' '); idx > 0 {
+		return strings.ToUpper(q[:idx])
+	}
+	return strings.ToUpper(q)
 }
