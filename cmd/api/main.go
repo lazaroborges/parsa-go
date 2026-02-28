@@ -10,6 +10,7 @@ import (
 
 	"parsa/internal/interfaces/scheduler"
 	"parsa/internal/shared/config"
+	"parsa/internal/shared/telemetry"
 )
 
 func main() {
@@ -25,6 +26,26 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+
+	// Initialize telemetry if enabled
+	if cfg.Telemetry.Enabled {
+		shutdownTelemetry, err := telemetry.Init(context.Background(), telemetry.Config{
+			ServiceName:  cfg.Telemetry.ServiceName,
+			Environment:  cfg.Telemetry.Environment,
+			OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+			MetricsPort:  cfg.Telemetry.MetricsPort,
+		})
+		if err != nil {
+			return err
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := shutdownTelemetry(ctx); err != nil {
+				log.Printf("Telemetry shutdown error: %v", err)
+			}
+		}()
 	}
 
 	// Initialize dependencies

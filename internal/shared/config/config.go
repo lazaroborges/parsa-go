@@ -18,6 +18,7 @@ type Config struct {
 	TLS         TLSConfig
 	OpenFinance OpenFinanceConfig
 	Firebase    FirebaseConfig
+	Telemetry   TelemetryConfig
 }
 
 type ServerConfig struct {
@@ -87,6 +88,14 @@ type FirebaseConfig struct {
 	CredentialsFile string
 }
 
+type TelemetryConfig struct {
+	Enabled      bool
+	ServiceName  string
+	Environment  string
+	OTLPEndpoint string
+	MetricsPort  string
+}
+
 func Load() (*Config, error) {
 
 	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
@@ -145,6 +154,13 @@ func Load() (*Config, error) {
 	googleMobileURL := buildCallbackURL("/api/auth/oauth/mobile/callback", "GOOGLE_MOBILE_CALLBACK_URL")
 	appleMobileURL := buildCallbackURL("/api/auth/oauth/apple/mobile/callback", "APPLE_MOBILE_CALLBACK_URL")
 
+	// Parse telemetry configuration
+	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
+	otelServiceName := getEnv("OTEL_SERVICE_NAME", "parsa-api")
+	otelEnvironment := getEnv("OTEL_ENVIRONMENT", "development")
+	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+	otelMetricsPort := getEnv("OTEL_METRICS_PORT", "9464")
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port:         getEnv("PORT", "8080"),
@@ -199,6 +215,13 @@ func Load() (*Config, error) {
 		},
 		Firebase: FirebaseConfig{
 			CredentialsFile: getEnv("FIREBASE_CREDENTIALS_FILE", ""),
+		},
+		Telemetry: TelemetryConfig{
+			Enabled:      otelEnabled,
+			ServiceName:  otelServiceName,
+			Environment:  otelEnvironment,
+			OTLPEndpoint: otelEndpoint,
+			MetricsPort:  otelMetricsPort,
 		},
 	}
 

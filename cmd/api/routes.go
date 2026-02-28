@@ -67,5 +67,11 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 		log.Println("TLS security middleware enabled (HSTS + SecureCookies)")
 	}
 
+	// Apply telemetry middleware as outermost wrapper when enabled
+	if cfg.Telemetry.Enabled {
+		handler = middleware.Telemetry(handler)
+		log.Println("OpenTelemetry middleware enabled")
+	}
+
 	return handler
 }
