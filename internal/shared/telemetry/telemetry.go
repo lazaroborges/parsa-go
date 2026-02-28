@@ -93,12 +93,8 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		propagation.Baggage{},
 	))
 
-func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
-	var shutdownFuncs []func(context.Context) error
 	metricsSrv := serveMetrics(cfg.MetricsPort)
 	shutdownFuncs = append(shutdownFuncs, metricsSrv.Shutdown)
-
-	// ... rest of initialization ...
 
 	log.Printf("OpenTelemetry initialized (metrics=:%s, traces=%s)", cfg.MetricsPort, cfg.OTLPEndpoint)
 
@@ -124,26 +120,4 @@ func serveMetrics(port string) *http.Server {
 	}()
 
 	return srv
-}
-
-	log.Printf("OpenTelemetry initialized (metrics=:%s, traces=%s)", cfg.MetricsPort, cfg.OTLPEndpoint)
-
-	return shutdown, nil
-}
-
-func serveMetrics(port string) {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-
-	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
-	log.Printf("Metrics server listening on :%s/metrics", port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Printf("Metrics server error: %v", err)
-	}
 }
