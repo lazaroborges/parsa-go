@@ -61,15 +61,36 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql
 	return rows, err
 }
 
+// tracedRow wraps *sql.Row so the tracing span stays open until Scan() is
+// called, which is where sql.Row surfaces all errors (including sql.ErrNoRows).
+type tracedRow struct {
+	row  *sql.Row
+	span trace.Span
+}
+
+func (r *tracedRow) Scan(dest ...any) error {
+	err := r.row.Scan(dest...)
+	if err != nil {
+		r.span.RecordError(err)
+		r.span.SetStatus(codes.Error, err.Error())
+	}
+	r.span.End()
+	return err
+}
+
 // QueryRowContext wraps sql.DB.QueryRowContext with tracing.
-func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+// The returned tracedRow ends the span in Scan(), not here, because
+// sql.Row defers all errors to Scan().
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *tracedRow {
 	ctx, span := dbTracer.Start(ctx, "db.QueryRow", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.statement", truncateQuery(query)),
 	))
-	defer span.End()
 
-	return db.DB.QueryRowContext(ctx, query, args...)
+	return &tracedRow{
+		row:  db.DB.QueryRowContext(ctx, query, args...),
+		span: span,
+	}
 }
 
 // ExecContext wraps sql.DB.ExecContext with tracing.
