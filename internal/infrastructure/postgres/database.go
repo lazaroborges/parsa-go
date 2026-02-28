@@ -66,6 +66,7 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql
 
 // tracedRow wraps *sql.Row so the tracing span stays open until Scan() is
 // called, which is where sql.Row surfaces all errors (including sql.ErrNoRows).
+// If the caller cannot call Scan (e.g. early return), call Close to end the span.
 type tracedRow struct {
 	row  *sql.Row
 	span trace.Span
@@ -82,6 +83,15 @@ func (r *tracedRow) Scan(dest ...any) error {
 		r.span = nil
 	}
 	return err
+}
+
+// Close ends the tracing span without scanning. Safe to call multiple times
+// or after Scan -- subsequent calls are no-ops.
+func (r *tracedRow) Close() {
+	if r.span != nil {
+		r.span.End()
+		r.span = nil
+	}
 }
 
 // QueryRowContext wraps sql.DB.QueryRowContext with tracing.
