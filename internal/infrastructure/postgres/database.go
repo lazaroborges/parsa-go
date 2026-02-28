@@ -70,11 +70,14 @@ type tracedRow struct {
 
 func (r *tracedRow) Scan(dest ...any) error {
 	err := r.row.Scan(dest...)
-	if err != nil {
-		r.span.RecordError(err)
-		r.span.SetStatus(codes.Error, err.Error())
+	if r.span != nil {
+		if err != nil {
+			r.span.RecordError(err)
+			r.span.SetStatus(codes.Error, err.Error())
+		}
+		r.span.End()
+		r.span = nil
 	}
-	r.span.End()
 	return err
 }
 
