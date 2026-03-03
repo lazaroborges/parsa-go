@@ -8,8 +8,69 @@ import (
 	"testing"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/transaction"
+	"parsa/internal/models"
 	"parsa/internal/shared/middleware"
 )
+
+// noopItemRepo implements models.ItemRepository for tests that don't use item operations.
+type noopItemRepo struct{}
+
+func (noopItemRepo) FindOrCreate(ctx context.Context, id string, userID int64) (*models.Item, error) {
+	return nil, nil
+}
+func (noopItemRepo) ListByUserID(ctx context.Context, userID int64) ([]*models.Item, error) {
+	return nil, nil
+}
+func (noopItemRepo) Delete(ctx context.Context, id string) error {
+	return nil
+}
+func (noopItemRepo) SoftDelete(ctx context.Context, id string) error {
+	return nil
+}
+
+// noopTransactionRepo implements transaction.Repository for tests that don't use transaction operations.
+type noopTransactionRepo struct{}
+
+func (noopTransactionRepo) Create(ctx context.Context, params transaction.CreateTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+	return 0, nil
+}
+func (noopTransactionRepo) Update(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) Delete(ctx context.Context, id string) error {
+	return nil
+}
+func (noopTransactionRepo) DeleteByAccountID(ctx context.Context, accountID string) error {
+	return nil
+}
+func (noopTransactionRepo) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) FindPotentialDuplicatesForBill(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error {
+	return nil
+}
+func (noopTransactionRepo) GetTransactionTags(ctx context.Context, transactionID string) ([]string, error) {
+	return nil, nil
+}
 
 // MockAccountRepo implements account.Repository for testing
 type MockAccountRepo struct {
@@ -24,6 +85,11 @@ type MockAccountRepo struct {
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
 	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
 	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+	SoftRemoveFunc             func(ctx context.Context, id string) error
+	RestoreFunc                func(ctx context.Context, id string) error
+	DeleteByItemIDFunc         func(ctx context.Context, itemID string) error
+	ListByItemIDFunc           func(ctx context.Context, itemID string) ([]*account.Account, error)
+	DeleteBankDataFunc         func(ctx context.Context, itemID string) error
 }
 
 func (m *MockAccountRepo) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
@@ -103,6 +169,41 @@ func (m *MockAccountRepo) ListByUserIDWithBank(ctx context.Context, userID int64
 	return nil, nil
 }
 
+func (m *MockAccountRepo) SoftRemove(ctx context.Context, id string) error {
+	if m.SoftRemoveFunc != nil {
+		return m.SoftRemoveFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) Restore(ctx context.Context, id string) error {
+	if m.RestoreFunc != nil {
+		return m.RestoreFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) DeleteByItemID(ctx context.Context, itemID string) error {
+	if m.DeleteByItemIDFunc != nil {
+		return m.DeleteByItemIDFunc(ctx, itemID)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) ListByItemID(ctx context.Context, itemID string) ([]*account.Account, error) {
+	if m.ListByItemIDFunc != nil {
+		return m.ListByItemIDFunc(ctx, itemID)
+	}
+	return nil, nil
+}
+
+func (m *MockAccountRepo) DeleteBankData(ctx context.Context, itemID string) error {
+	if m.DeleteBankDataFunc != nil {
+		return m.DeleteBankDataFunc(ctx, itemID)
+	}
+	return nil
+}
+
 func TestHandleListAccounts(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -153,8 +254,8 @@ func TestHandleListAccounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mockRepo()
-			service := account.NewService(repo)
-			handler := NewAccountHandler(service)
+			service := account.NewService(repo, noopItemRepo{}, noopTransactionRepo{})
+			handler := NewAccountHandler(service, nil, nil)
 
 			req, _ := http.NewRequest(http.MethodGet, "/api/accounts/", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
@@ -172,8 +273,8 @@ func TestHandleListAccounts(t *testing.T) {
 
 func TestHandleListAccounts_MethodNotAllowed(t *testing.T) {
 	repo := &MockAccountRepo{}
-	service := account.NewService(repo)
-	handler := NewAccountHandler(service)
+	service := account.NewService(repo, noopItemRepo{}, noopTransactionRepo{})
+	handler := NewAccountHandler(service, nil, nil)
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/accounts/", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, int64(1))

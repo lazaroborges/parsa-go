@@ -200,7 +200,7 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 		RETURNING id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
 		          provider_updated_at, provider_created_at, created_at, updated_at,
 		          initial_balance, is_open_finance_account, closed_at, "order", description,
-		          removed, hidden_by_user
+		          removed_at, hidden_by_user
 	`
 
 	// Convert pointer params to sql.Null* types
@@ -229,7 +229,7 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 	var itemID, subtype sql.NullString
 	var bankID sql.NullInt64
 	var providerUpdatedAt, providerCreatedAt sql.NullTime
-	var closedAt sql.NullTime
+	var closedAt, removedAt sql.NullTime
 	var description sql.NullString
 
 	err := r.db.QueryRowContext(
@@ -241,7 +241,7 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 		&bankID, &providerUpdatedAt, &providerCreatedAt,
 		&acc.CreatedAt, &acc.UpdatedAt,
 		&acc.InitialBalance, &acc.IsOpenFinanceAccount, &closedAt,
-		&acc.UIOrder, &description, &acc.Removed, &acc.HiddenByUser,
+		&acc.UIOrder, &description, &removedAt, &acc.HiddenByUser,
 	)
 
 	if err == sql.ErrNoRows {
@@ -271,6 +271,9 @@ func (r *AccountRepository) Update(ctx context.Context, id string, params accoun
 	}
 	if description.Valid {
 		acc.Description = description.String
+	}
+	if removedAt.Valid {
+		acc.RemovedAt = &removedAt.Time
 	}
 
 	return &acc, nil
@@ -479,7 +482,7 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
 		       provider_updated_at, provider_created_at, created_at, updated_at
 		FROM accounts
-		WHERE user_id = $1 AND name = $2 AND account_type = $3 AND subtype = $4
+		WHERE user_id = $1 AND name = $2 AND account_type = $3 AND subtype = $4 AND removed_at IS NULL
 		LIMIT 1
 	`
 
@@ -549,7 +552,7 @@ func (r *AccountRepository) ListByUserIDWithBank(ctx context.Context, userID int
 		SELECT 
 			a.id, a.user_id, a.item_id, a.name, a.account_type, a.subtype, a.currency, a.balance, a.bank_id,
 			a.provider_updated_at, a.provider_created_at, a.created_at, a.updated_at,
-			a.initial_balance, a.is_open_finance_account, a.closed_at, a."order", a.description, a.removed, a.hidden_by_user,
+			a.initial_balance, a.is_open_finance_account, a.closed_at, a."order", a.description, a.removed_at, a.hidden_by_user,
 			b.name AS bank_name, b.ui_name AS bank_ui_name, b.connector AS bank_connector, b.primary_color AS bank_primary_color
 		FROM accounts a
 		LEFT JOIN banks b ON a.bank_id = b.id
@@ -568,14 +571,14 @@ func (r *AccountRepository) ListByUserIDWithBank(ctx context.Context, userID int
 		var acc account.AccountWithBank
 		var itemID, subtype, description sql.NullString
 		var bankID sql.NullInt64
-		var providerUpdatedAt, providerCreatedAt, closedAt sql.NullTime
+		var providerUpdatedAt, providerCreatedAt, closedAt, removedAt sql.NullTime
 		var bankName, bankUIName, bankConnector, bankPrimaryColor sql.NullString
 
 		err := rows.Scan(
 			&acc.ID, &acc.UserID, &itemID, &acc.Name,
 			&acc.AccountType, &subtype, &acc.Currency, &acc.Balance, &bankID,
 			&providerUpdatedAt, &providerCreatedAt, &acc.CreatedAt, &acc.UpdatedAt,
-			&acc.InitialBalance, &acc.IsOpenFinanceAccount, &closedAt, &acc.UIOrder, &description, &acc.Removed, &acc.HiddenByUser,
+			&acc.InitialBalance, &acc.IsOpenFinanceAccount, &closedAt, &acc.UIOrder, &description, &removedAt, &acc.HiddenByUser,
 			&bankName, &bankUIName, &bankConnector, &bankPrimaryColor,
 		)
 		if err != nil {
@@ -602,6 +605,9 @@ func (r *AccountRepository) ListByUserIDWithBank(ctx context.Context, userID int
 		}
 		if description.Valid {
 			acc.Description = description.String
+		}
+		if removedAt.Valid {
+			acc.RemovedAt = &removedAt.Time
 		}
 		if bankName.Valid {
 			acc.BankName = bankName.String
@@ -636,7 +642,7 @@ func (r *AccountRepository) GetBalanceSumBySubtype(ctx context.Context, userID i
 	query := `
 		SELECT COALESCE(SUM(ABS(balance)), 0)
 		FROM accounts
-		WHERE user_id = $1 AND subtype = ANY($2) AND removed = false AND hidden_by_user = false
+		WHERE user_id = $1 AND subtype = ANY($2) AND removed_at IS NULL AND hidden_by_user = false
 	`
 
 	var sum float64
@@ -646,6 +652,181 @@ func (r *AccountRepository) GetBalanceSumBySubtype(ctx context.Context, userID i
 	}
 
 	return sum, nil
+}
+
+// SoftRemove sets removed_at on an account that is not already removed
+func (r *AccountRepository) SoftRemove(ctx context.Context, id string) error {
+	query := `UPDATE accounts SET removed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND removed_at IS NULL`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to soft-remove account: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	if rows == 0 {
+		var removedAt sql.NullTime
+		checkErr := r.db.QueryRowContext(ctx, `SELECT removed_at FROM accounts WHERE id = $1`, id).Scan(&removedAt)
+		if checkErr == sql.ErrNoRows {
+			return account.ErrAccountNotFound
+		}
+		if checkErr != nil {
+			return fmt.Errorf("failed to verify account state: %w", checkErr)
+		}
+		return account.ErrAccountAlreadyRemoved
+	}
+
+	return nil
+}
+
+// Restore clears removed_at on an account that is currently removed
+func (r *AccountRepository) Restore(ctx context.Context, id string) error {
+	query := `UPDATE accounts SET removed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND removed_at IS NOT NULL`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to restore account: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	if rows == 0 {
+		return account.ErrAccountNotRemoved
+	}
+
+	return nil
+}
+
+// DeleteByItemID hard-deletes all accounts belonging to an item
+func (r *AccountRepository) DeleteByItemID(ctx context.Context, itemID string) error {
+	query := `DELETE FROM accounts WHERE item_id = $1`
+
+	_, err := r.db.ExecContext(ctx, query, itemID)
+	if err != nil {
+		return fmt.Errorf("failed to delete accounts by item: %w", err)
+	}
+
+	return nil
+}
+
+// ListByItemID retrieves all accounts belonging to an item
+func (r *AccountRepository) ListByItemID(ctx context.Context, itemID string) ([]*account.Account, error) {
+	query := `
+		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
+		       provider_updated_at, provider_created_at, created_at, updated_at
+		FROM accounts
+		WHERE item_id = $1
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list accounts by item: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []*account.Account
+	for rows.Next() {
+		var acc account.Account
+		var itemIDOut, subtype sql.NullString
+		var bankID sql.NullInt64
+		var providerUpdatedAt, providerCreatedAt sql.NullTime
+
+		err := rows.Scan(
+			&acc.ID, &acc.UserID, &itemIDOut, &acc.Name,
+			&acc.AccountType, &subtype, &acc.Currency, &acc.Balance,
+			&bankID, &providerUpdatedAt, &providerCreatedAt,
+			&acc.CreatedAt, &acc.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+
+		if itemIDOut.Valid {
+			acc.ItemID = itemIDOut.String
+		}
+		if subtype.Valid {
+			acc.Subtype = subtype.String
+		}
+		if bankID.Valid {
+			acc.BankID = bankID.Int64
+		}
+		if providerUpdatedAt.Valid {
+			acc.ProviderUpdatedAt = providerUpdatedAt.Time
+		}
+		if providerCreatedAt.Valid {
+			acc.ProviderCreatedAt = providerCreatedAt.Time
+		}
+
+		accounts = append(accounts, &acc)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating accounts: %w", err)
+	}
+
+	return accounts, nil
+}
+
+// DeleteBankData atomically deletes all transactions for the item's accounts,
+// deletes the accounts, and soft-deletes the item in a single transaction.
+func (r *AccountRepository) DeleteBankData(ctx context.Context, itemID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Collect account IDs belonging to this item
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM accounts WHERE item_id = $1`, itemID)
+	if err != nil {
+		return fmt.Errorf("failed to list accounts for item: %w", err)
+	}
+	var accountIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to scan account id: %w", err)
+		}
+		accountIDs = append(accountIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating account ids: %w", err)
+	}
+
+	// Delete transactions for each account
+	for _, accID := range accountIDs {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM transactions WHERE account_id = $1`, accID); err != nil {
+			return fmt.Errorf("failed to delete transactions for account %s: %w", accID, err)
+		}
+	}
+
+	// Delete all accounts belonging to this item
+	if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE item_id = $1`, itemID); err != nil {
+		return fmt.Errorf("failed to delete accounts for item: %w", err)
+	}
+
+	// Soft-delete the item
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE items SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+		itemID,
+	); err != nil {
+		return fmt.Errorf("failed to soft-delete item: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit bank data deletion: %w", err)
+	}
+
+	return nil
 }
 
 // Helper functions

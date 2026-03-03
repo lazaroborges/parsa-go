@@ -109,6 +109,25 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}
 	for i := range accounts {
+func (s *TransactionSyncService) processTransaction(
+	account, found := accountCache[matchKey]
+	if found && account != nil && account.RemovedAt != nil {
+		log.Printf("Skipping transaction %s: matched removed account %s", apiTx.ID, account.ID)
+		result.Skipped++
+		return nil, false, nil
+	}
+
+	if !found {
+		if account == nil {
+		}
+		if account.RemovedAt != nil {
+			log.Printf("Skipping transaction %s: matched removed account %s", apiTx.ID, account.ID)
+			result.Skipped++
+			return nil, false, nil
+		}
+		// Update cache
+		accountCache[matchKey] = account
+	}
 		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
 		accountCache[key] = accounts[i]
 	}

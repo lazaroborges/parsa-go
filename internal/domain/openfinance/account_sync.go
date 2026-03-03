@@ -157,6 +157,18 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 		return fmt.Errorf("failed to check account existence: %w", err)
 	}
 
+	// Skip removed accounts — don't re-sync them
+	if exists {
+		existing, err := s.accountService.GetAccountByID(ctx, apiAccount.AccountID)
+		if err != nil {
+			return fmt.Errorf("failed to load existing account: %w", err)
+		}
+		if existing != nil && existing.RemovedAt != nil {
+			log.Printf("User %d: Skipping removed account %s", userID, apiAccount.AccountID)
+			return nil
+		}
+	}
+
 	// Prepare upsert parameters
 	params := account.UpsertParams{
 		ID:                apiAccount.AccountID,

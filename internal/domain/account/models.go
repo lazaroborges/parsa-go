@@ -35,6 +35,9 @@ var (
 	ErrForbidden             = errors.New("access forbidden")
 	ErrInvalidInput          = errors.New("invalid input")
 	ErrInvalidCurrency       = errors.New("valid ISO 4217 currency is required")
+	ErrAccountAlreadyRemoved = errors.New("account is already removed")
+	ErrAccountNotRemoved     = errors.New("account is not removed")
+	ErrAccountNoItem         = errors.New("account has no associated item")
 )
 
 // Account represents a financial account domain entity
@@ -56,9 +59,9 @@ type Account struct {
 	IsOpenFinanceAccount bool      `json:"isOpenFinanceAccount"` // default to true
 	ClosedAt             time.Time `json:"closedAt"`             // default to NULL
 	UIOrder              int       `json:"order"`                // default to 90
-	Description          string    `json:"description"`          // default to NULL
-	Removed              bool      `json:"removed"`              // default to false
-	HiddenByUser         bool      `json:"hiddenByUser"`         // default to false
+	Description          string     `json:"description"`          // default to NULL
+	RemovedAt            *time.Time `json:"removedAt"`            // default to NULL
+	HiddenByUser         bool       `json:"hiddenByUser"`         // default to false
 }
 
 // AccountWithBank represents an account with its associated bank data (for API responses)
@@ -137,7 +140,6 @@ type UpsertParams struct {
 	ClosedAt             *time.Time
 	UIOrder              *int
 	Description          *string
-	Removed              *bool
 	HiddenByUser         *bool
 }
 

@@ -145,7 +145,7 @@ func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, 
 		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
-		WHERE a.user_id = $1
+		WHERE a.user_id = $1 AND a.removed_at IS NULL
 		ORDER BY t.transaction_date DESC, t.created_at DESC
 		LIMIT $2 OFFSET $3
 	`
@@ -165,7 +165,7 @@ func (r *TransactionRepository) CountByUserID(ctx context.Context, userID int64)
 		SELECT COUNT(*)
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
-		WHERE a.user_id = $1
+		WHERE a.user_id = $1 AND a.removed_at IS NULL
 	`
 
 	var count int64
@@ -414,6 +414,18 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByAccountID removes all transactions for a given account
+func (r *TransactionRepository) DeleteByAccountID(ctx context.Context, accountID string) error {
+	query := `DELETE FROM transactions WHERE account_id = $1`
+
+	_, err := r.db.ExecContext(ctx, query, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete transactions by account: %w", err)
+	}
+
+	return nil
+}
+
 // Upsert inserts or updates a transaction (used for syncing from provider)
 // Note: original_description is NOT set here - it's only set when user changes description via API
 func (r *TransactionRepository) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
@@ -641,6 +653,7 @@ func (r *TransactionRepository) FindPotentialDuplicates(ctx context.Context, cri
 		  AND t.transaction_date >= $4
 		  AND t.transaction_date <= $5
 		  AND a.user_id = $6
+		  AND a.removed_at IS NULL
 	`
 
 	rows, err := r.db.QueryContext(ctx, query,
@@ -682,6 +695,7 @@ func (r *TransactionRepository) FindPotentialDuplicatesForBill(ctx context.Conte
 			  AND t.transaction_date >= $3
 			  AND t.transaction_date <= $4
 			  AND a.user_id = $5
+			  AND a.removed_at IS NULL
 		`
 		args = []interface{}{
 			criteria.ExcludeID,
@@ -703,6 +717,7 @@ func (r *TransactionRepository) FindPotentialDuplicatesForBill(ctx context.Conte
 			  AND t.transaction_date >= $2
 			  AND t.transaction_date <= $3
 			  AND a.user_id = $4
+			  AND a.removed_at IS NULL
 		`
 		args = []interface{}{
 			criteria.AbsoluteAmount,

@@ -56,6 +56,9 @@ func (m *MockTransactionRepo) Update(ctx context.Context, id string, params tran
 	return nil, nil
 }
 func (m *MockTransactionRepo) Delete(ctx context.Context, id string) error { return nil }
+func (m *MockTransactionRepo) DeleteByAccountID(ctx context.Context, accountID string) error {
+	return nil
+}
 func (m *MockTransactionRepo) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	if m.UpsertFunc != nil {
 		return m.UpsertFunc(ctx, params)
@@ -240,7 +243,7 @@ func TestSyncUserTransactions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			accRepo := tt.mockAccRepo()
-			accService := account.NewService(accRepo)
+			accService := account.NewService(accRepo, &MockItemRepo{}, tt.mockTxRepo())
 
 			svc := NewTransactionSyncService(
 				tt.mockClient(),

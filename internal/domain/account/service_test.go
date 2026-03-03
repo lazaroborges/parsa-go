@@ -5,7 +5,73 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"parsa/internal/domain/transaction"
+	"parsa/internal/models"
 )
+
+// noopItemRepo is a lightweight mock for tests that don't use item operations.
+type noopItemRepo struct{}
+
+func (noopItemRepo) FindOrCreate(ctx context.Context, id string, userID int64) (*models.Item, error) {
+	return nil, nil
+}
+func (noopItemRepo) ListByUserID(ctx context.Context, userID int64) ([]*models.Item, error) {
+	return nil, nil
+}
+func (noopItemRepo) Delete(ctx context.Context, id string) error {
+	return nil
+}
+func (noopItemRepo) SoftDelete(ctx context.Context, id string) error {
+	return nil
+}
+
+// noopTransactionRepo is a lightweight mock for tests that don't use transaction operations.
+type noopTransactionRepo struct{}
+
+func (noopTransactionRepo) Create(ctx context.Context, params transaction.CreateTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) GetByID(ctx context.Context, id string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) ListByAccountID(ctx context.Context, accountID string, limit, offset int) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) ListByUserID(ctx context.Context, userID int64, limit, offset int) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+	return 0, nil
+}
+func (noopTransactionRepo) Update(ctx context.Context, id string, params transaction.UpdateTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) Delete(ctx context.Context, id string) error {
+	return nil
+}
+func (noopTransactionRepo) DeleteByAccountID(ctx context.Context, accountID string) error {
+	return nil
+}
+func (noopTransactionRepo) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) FindPotentialDuplicates(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) FindPotentialDuplicatesForBill(ctx context.Context, criteria transaction.DuplicateCriteria) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+func (noopTransactionRepo) SetTransactionTags(ctx context.Context, transactionID string, tagIDs []string) error {
+	return nil
+}
+func (noopTransactionRepo) GetTransactionTags(ctx context.Context, transactionID string) ([]string, error) {
+	return nil, nil
+}
+
+func newTestService(repo Repository) *Service {
+	return NewService(repo, noopItemRepo{}, noopTransactionRepo{})
+}
 
 // MockRepository is a mock implementation of Repository interface
 type MockRepository struct {
@@ -20,6 +86,11 @@ type MockRepository struct {
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
 	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
 	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+	SoftRemoveFunc             func(ctx context.Context, id string) error
+	RestoreFunc                func(ctx context.Context, id string) error
+	DeleteByItemIDFunc         func(ctx context.Context, itemID string) error
+	ListByItemIDFunc           func(ctx context.Context, itemID string) ([]*Account, error)
+	DeleteBankDataFunc         func(ctx context.Context, itemID string) error
 }
 
 // GetBalanceSumBySubtype implements Repository.
@@ -98,6 +169,41 @@ func (m *MockRepository) ListByUserIDWithBank(ctx context.Context, userID int64)
 		return m.ListByUserIDWithBankFunc(ctx, userID)
 	}
 	return nil, nil
+}
+
+func (m *MockRepository) SoftRemove(ctx context.Context, id string) error {
+	if m.SoftRemoveFunc != nil {
+		return m.SoftRemoveFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockRepository) Restore(ctx context.Context, id string) error {
+	if m.RestoreFunc != nil {
+		return m.RestoreFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockRepository) DeleteByItemID(ctx context.Context, itemID string) error {
+	if m.DeleteByItemIDFunc != nil {
+		return m.DeleteByItemIDFunc(ctx, itemID)
+	}
+	return nil
+}
+
+func (m *MockRepository) ListByItemID(ctx context.Context, itemID string) ([]*Account, error) {
+	if m.ListByItemIDFunc != nil {
+		return m.ListByItemIDFunc(ctx, itemID)
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) DeleteBankData(ctx context.Context, itemID string) error {
+	if m.DeleteBankDataFunc != nil {
+		return m.DeleteBankDataFunc(ctx, itemID)
+	}
+	return nil
 }
 
 func TestCreateAccount(t *testing.T) {
@@ -210,7 +316,7 @@ func TestCreateAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := newTestService(repo)
 
 			acc, err := service.CreateAccount(ctx, tt.params)
 
@@ -292,7 +398,7 @@ func TestGetAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := newTestService(repo)
 
 			acc, err := service.GetAccount(ctx, tt.accountID, tt.userID)
 
@@ -391,7 +497,7 @@ func TestDeleteAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := newTestService(repo)
 
 			err := service.DeleteAccount(ctx, tt.accountID, tt.userID)
 
@@ -472,7 +578,7 @@ func TestListAccountsByUserID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := newTestService(repo)
 
 			accounts, err := service.ListAccountsByUserID(ctx, tt.userID)
 
@@ -578,7 +684,7 @@ func TestUpsertAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := newTestService(repo)
 
 			acc, err := service.UpsertAccount(ctx, tt.params)
 

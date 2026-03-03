@@ -64,6 +64,9 @@ func (m *MockTransactionRepo) Delete(ctx context.Context, id string) error {
 	}
 	return nil
 }
+func (m *MockTransactionRepo) DeleteByAccountID(ctx context.Context, accountID string) error {
+	return nil
+}
 func (m *MockTransactionRepo) Upsert(ctx context.Context, params UpsertTransactionParams) (*Transaction, error) {
 	if m.UpsertFunc != nil {
 		return m.UpsertFunc(ctx, params)

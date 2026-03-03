@@ -37,4 +37,20 @@ type Repository interface {
 
 	// GetBalanceSumBySubtype calculates the sum of absolute balances for accounts with specific subtypes
 	GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error)
+
+	// SoftRemove sets removed_at on an account (must not already be removed)
+	SoftRemove(ctx context.Context, id string) error
+
+	// Restore clears removed_at on an account (must currently be removed)
+	Restore(ctx context.Context, id string) error
+
+	// DeleteByItemID hard-deletes all accounts belonging to an item
+	DeleteByItemID(ctx context.Context, itemID string) error
+
+	// ListByItemID retrieves all accounts belonging to an item
+	ListByItemID(ctx context.Context, itemID string) ([]*Account, error)
+
+	// DeleteBankData atomically deletes all transactions for the item's accounts,
+	// deletes the accounts, and soft-deletes the item in a single transaction.
+	DeleteBankData(ctx context.Context, itemID string) error
 }
