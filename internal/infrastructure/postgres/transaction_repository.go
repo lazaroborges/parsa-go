@@ -653,6 +653,7 @@ func (r *TransactionRepository) FindPotentialDuplicates(ctx context.Context, cri
 		  AND t.transaction_date >= $4
 		  AND t.transaction_date <= $5
 		  AND a.user_id = $6
+		  AND a.removed_at IS NULL
 	`
 
 	rows, err := r.db.QueryContext(ctx, query,
@@ -694,6 +695,7 @@ func (r *TransactionRepository) FindPotentialDuplicatesForBill(ctx context.Conte
 			  AND t.transaction_date >= $3
 			  AND t.transaction_date <= $4
 			  AND a.user_id = $5
+			  AND a.removed_at IS NULL
 		`
 		args = []interface{}{
 			criteria.ExcludeID,
@@ -715,6 +717,7 @@ func (r *TransactionRepository) FindPotentialDuplicatesForBill(ctx context.Conte
 			  AND t.transaction_date >= $2
 			  AND t.transaction_date <= $3
 			  AND a.user_id = $4
+			  AND a.removed_at IS NULL
 		`
 		args = []interface{}{
 			criteria.AbsoluteAmount,
