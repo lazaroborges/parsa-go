@@ -145,7 +145,7 @@ func (r *TransactionRepository) ListByUserID(ctx context.Context, userID int64, 
 		       t.considered, t.is_open_finance, t.tags, t.manipulated, t.notes, t.cousin
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
-		WHERE a.user_id = $1
+		WHERE a.user_id = $1 AND a.removed_at IS NULL
 		ORDER BY t.transaction_date DESC, t.created_at DESC
 		LIMIT $2 OFFSET $3
 	`
@@ -165,7 +165,7 @@ func (r *TransactionRepository) CountByUserID(ctx context.Context, userID int64)
 		SELECT COUNT(*)
 		FROM transactions t
 		JOIN accounts a ON t.account_id = a.id
-		WHERE a.user_id = $1
+		WHERE a.user_id = $1 AND a.removed_at IS NULL
 	`
 
 	var count int64
@@ -409,6 +409,18 @@ func (r *TransactionRepository) Delete(ctx context.Context, id string) error {
 
 	if rows == 0 {
 		return fmt.Errorf("transaction not found")
+	}
+
+	return nil
+}
+
+// DeleteByAccountID removes all transactions for a given account
+func (r *TransactionRepository) DeleteByAccountID(ctx context.Context, accountID string) error {
+	query := `DELETE FROM transactions WHERE account_id = $1`
+
+	_, err := r.db.ExecContext(ctx, query, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete transactions by account: %w", err)
 	}
 
 	return nil

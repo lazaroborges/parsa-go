@@ -109,6 +109,9 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}
 	for i := range accounts {
+		if accounts[i].RemovedAt != nil {
+			continue
+		}
 		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
 		accountCache[key] = accounts[i]
 	}

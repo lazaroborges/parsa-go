@@ -72,7 +72,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	accountRepo := postgres.NewAccountRepository(db)
 
 	// Initialize domain services
-	accountService := account.NewService(accountRepo)
+	accountService := account.NewService(accountRepo, itemRepo, transactionRepo)
 
 	// Initialize bill repository
 	billRepo := postgres.NewBillRepository(db)

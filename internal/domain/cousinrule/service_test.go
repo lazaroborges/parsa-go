@@ -125,6 +125,9 @@ func (m *MockTransactionRepo) Update(ctx context.Context, id string, params tran
 	return nil, nil
 }
 func (m *MockTransactionRepo) Delete(ctx context.Context, id string) error { return nil }
+func (m *MockTransactionRepo) DeleteByAccountID(ctx context.Context, accountID string) error {
+	return nil
+}
 func (m *MockTransactionRepo) Upsert(ctx context.Context, params transaction.UpsertTransactionParams) (*transaction.Transaction, error) {
 	return nil, nil
 }

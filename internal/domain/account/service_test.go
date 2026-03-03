@@ -20,6 +20,10 @@ type MockRepository struct {
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*Account, error)
 	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
 	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+	SoftRemoveFunc             func(ctx context.Context, id string) error
+	RestoreFunc                func(ctx context.Context, id string) error
+	DeleteByItemIDFunc         func(ctx context.Context, itemID string) error
+	ListByItemIDFunc           func(ctx context.Context, itemID string) ([]*Account, error)
 }
 
 // GetBalanceSumBySubtype implements Repository.
@@ -96,6 +100,34 @@ func (m *MockRepository) UpdateBankID(ctx context.Context, accountID string, ban
 func (m *MockRepository) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*AccountWithBank, error) {
 	if m.ListByUserIDWithBankFunc != nil {
 		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) SoftRemove(ctx context.Context, id string) error {
+	if m.SoftRemoveFunc != nil {
+		return m.SoftRemoveFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockRepository) Restore(ctx context.Context, id string) error {
+	if m.RestoreFunc != nil {
+		return m.RestoreFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockRepository) DeleteByItemID(ctx context.Context, itemID string) error {
+	if m.DeleteByItemIDFunc != nil {
+		return m.DeleteByItemIDFunc(ctx, itemID)
+	}
+	return nil
+}
+
+func (m *MockRepository) ListByItemID(ctx context.Context, itemID string) ([]*Account, error) {
+	if m.ListByItemIDFunc != nil {
+		return m.ListByItemIDFunc(ctx, itemID)
 	}
 	return nil, nil
 }
@@ -210,7 +242,7 @@ func TestCreateAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := NewService(repo, nil, nil)
 
 			acc, err := service.CreateAccount(ctx, tt.params)
 
@@ -292,7 +324,7 @@ func TestGetAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := NewService(repo, nil, nil)
 
 			acc, err := service.GetAccount(ctx, tt.accountID, tt.userID)
 
@@ -391,7 +423,7 @@ func TestDeleteAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := NewService(repo, nil, nil)
 
 			err := service.DeleteAccount(ctx, tt.accountID, tt.userID)
 
@@ -472,7 +504,7 @@ func TestListAccountsByUserID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := NewService(repo, nil, nil)
 
 			accounts, err := service.ListAccountsByUserID(ctx, tt.userID)
 
@@ -578,7 +610,7 @@ func TestUpsertAccount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mock()
-			service := NewService(repo)
+			service := NewService(repo, nil, nil)
 
 			acc, err := service.UpsertAccount(ctx, tt.params)
 

@@ -3,16 +3,27 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
+
+	"parsa/internal/domain/transaction"
+	"parsa/internal/models"
 )
 
 // Service contains the business logic for account operations
 type Service struct {
-	repo Repository
+	repo            Repository
+	itemRepo        models.ItemRepository
+	transactionRepo transaction.Repository
 }
 
 // NewService creates a new account service
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, itemRepo models.ItemRepository, transactionRepo transaction.Repository) *Service {
+	return &Service{
+		repo:            repo,
+		itemRepo:        itemRepo,
+		transactionRepo: transactionRepo,
+	}
 }
 
 // CreateAccount creates a new account with business validation
@@ -113,6 +124,11 @@ func (s *Service) UpsertAccount(ctx context.Context, params UpsertParams) (*Acco
 	return s.repo.Upsert(ctx, params)
 }
 
+// GetAccountByID retrieves an account by ID without ownership check (for internal/sync use)
+func (s *Service) GetAccountByID(ctx context.Context, accountID string) (*Account, error) {
+	return s.repo.GetByID(ctx, accountID)
+}
+
 // AccountExists checks if an account exists
 func (s *Service) AccountExists(ctx context.Context, accountID string) (bool, error) {
 	return s.repo.Exists(ctx, accountID)
@@ -139,4 +155,67 @@ func (s *Service) UpdateAccountBankID(ctx context.Context, accountID string, ban
 	}
 
 	return s.repo.UpdateBankID(ctx, accountID, bankID)
+}
+
+// RemoveAccount soft-removes an account (sets removed_at) after verifying ownership
+func (s *Service) RemoveAccount(ctx context.Context, accountID string, userID int64) error {
+	acc, err := s.GetAccount(ctx, accountID, userID)
+	if err != nil {
+		return err
+	}
+
+	if acc.RemovedAt != nil {
+		return ErrAccountAlreadyRemoved
+	}
+
+	return s.repo.SoftRemove(ctx, accountID)
+}
+
+// RestoreAccount restores a previously removed account after verifying ownership
+func (s *Service) RestoreAccount(ctx context.Context, accountID string, userID int64) error {
+	acc, err := s.GetAccount(ctx, accountID, userID)
+	if err != nil {
+		return err
+	}
+
+	if acc.RemovedAt == nil {
+		return ErrAccountNotRemoved
+	}
+
+	return s.repo.Restore(ctx, accountID)
+}
+
+// DeleteBank deletes all accounts and their transactions for the bank connection (item)
+// associated with the given account, then soft-deletes the item itself.
+func (s *Service) DeleteBank(ctx context.Context, accountID string, userID int64) error {
+	acc, err := s.GetAccount(ctx, accountID, userID)
+	if err != nil {
+		return err
+	}
+
+	if acc.ItemID == "" {
+		return ErrAccountNoItem
+	}
+
+	accounts, err := s.repo.ListByItemID(ctx, acc.ItemID)
+	if err != nil {
+		return fmt.Errorf("failed to list accounts for item: %w", err)
+	}
+
+	for _, a := range accounts {
+		if err := s.transactionRepo.DeleteByAccountID(ctx, a.ID); err != nil {
+			log.Printf("Error deleting transactions for account %s: %v", a.ID, err)
+			return fmt.Errorf("failed to delete transactions for account %s: %w", a.ID, err)
+		}
+	}
+
+	if err := s.repo.DeleteByItemID(ctx, acc.ItemID); err != nil {
+		return fmt.Errorf("failed to delete accounts for item: %w", err)
+	}
+
+	if err := s.itemRepo.SoftDelete(ctx, acc.ItemID); err != nil {
+		return fmt.Errorf("failed to soft-delete item: %w", err)
+	}
+
+	return nil
 }

@@ -51,9 +51,9 @@ type AccountResponse struct {
 	IsOpenFinance bool     `json:"isOpenFinance"`
 	ClosedAt      *string  `json:"closedAt"`
 	Order         int      `json:"order"`
-	Description   string   `json:"description"`
-	Removed       bool     `json:"removed"`
-	HiddenByUser  bool     `json:"hiddenByUser"`
+	Description   string `json:"description"`
+	Removed       bool   `json:"removed"` // true when removed_at has a value, false when null
+	HiddenByUser  bool   `json:"hiddenByUser"`
 	HasMFA        bool     `json:"hasMFA"` // false for now
 }
 
@@ -275,10 +275,126 @@ func toAccountResponse(acc *account.AccountWithBank) AccountResponse {
 		ClosedAt:      closedAt,
 		Order:         acc.UIOrder,
 		Description:   acc.Description,
-		Removed:       acc.Removed,
+		Removed:       acc.RemovedAt != nil,
 		HiddenByUser:  acc.HiddenByUser,
 		HasMFA:        false, // always false for now
 	}
+}
+
+// HandleRemoveAccount soft-removes an account (POST /api/accounts/{id}/remove)
+func (h *AccountHandler) HandleRemoveAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	accountID := r.PathValue("id")
+	if accountID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.accountService.RemoveAccount(r.Context(), accountID, userID)
+	if err != nil {
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		case account.ErrAccountAlreadyRemoved:
+			http.Error(w, "Account is already removed", http.StatusConflict)
+		default:
+			log.Printf("Error removing account %s: %v", accountID, err)
+			http.Error(w, "Failed to remove account", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
+}
+
+// HandleRestoreAccount restores a previously removed account (POST /api/accounts/{id}/restore)
+func (h *AccountHandler) HandleRestoreAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	accountID := r.PathValue("id")
+	if accountID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.accountService.RestoreAccount(r.Context(), accountID, userID)
+	if err != nil {
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		case account.ErrAccountNotRemoved:
+			http.Error(w, "Account is not removed", http.StatusConflict)
+		default:
+			log.Printf("Error restoring account %s: %v", accountID, err)
+			http.Error(w, "Failed to restore account", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
+}
+
+// HandleDeleteBank deletes all accounts for the bank connection (POST /api/accounts/{id}/delete-bank)
+func (h *AccountHandler) HandleDeleteBank(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	accountID := r.PathValue("id")
+	if accountID == "" {
+		http.Error(w, "Account ID is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.accountService.DeleteBank(r.Context(), accountID, userID)
+	if err != nil {
+		switch err {
+		case account.ErrAccountNotFound:
+			http.Error(w, "Account not found", http.StatusNotFound)
+		case account.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		case account.ErrAccountNoItem:
+			http.Error(w, "Account has no associated bank connection", http.StatusBadRequest)
+		default:
+			log.Printf("Error deleting bank for account %s: %v", accountID, err)
+			http.Error(w, "Failed to delete bank", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // mapAccountType maps the database subtype to mobile account_type

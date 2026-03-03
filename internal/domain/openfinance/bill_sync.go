@@ -90,6 +90,9 @@ func (s *BillSyncService) SyncUserBills(ctx context.Context, userID int64) (*Bil
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}
 	for i := range accounts {
+		if accounts[i].RemovedAt != nil {
+			continue
+		}
 		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
 		accountCache[key] = accounts[i]
 	}
@@ -97,6 +100,9 @@ func (s *BillSyncService) SyncUserBills(ctx context.Context, userID int64) (*Bil
 	// Also build account ID map for direct lookups
 	accountIDMap := make(map[string]*account.Account)
 	for i := range accounts {
+		if accounts[i].RemovedAt != nil {
+			continue
+		}
 		accountIDMap[accounts[i].ID] = accounts[i]
 	}
 

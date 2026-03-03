@@ -24,6 +24,7 @@ type Repository interface {
 	CountByUserID(ctx context.Context, userID int64) (int64, error)
 	Update(ctx context.Context, id string, params UpdateTransactionParams) (*Transaction, error)
 	Delete(ctx context.Context, id string) error
+	DeleteByAccountID(ctx context.Context, accountID string) error
 	Upsert(ctx context.Context, params UpsertTransactionParams) (*Transaction, error)
 	// FindPotentialDuplicates finds transactions that match the duplicate criteria
 	// Returns transactions with different ID, opposite type, same absolute amount,

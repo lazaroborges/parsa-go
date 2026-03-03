@@ -70,6 +70,10 @@ func (m *MockItemRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (m *MockItemRepo) SoftDelete(ctx context.Context, id string) error {
+	return nil
+}
+
 // MockUserRepo implements user.Repository (Minimal implementation for sync)
 type MockUserRepo struct {
 	GetByIDFunc func(ctx context.Context, id int64) (*user.User, error)
@@ -118,6 +122,10 @@ type MockAccountRepo struct {
 	FindByMatchFunc            func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error)
 	UpdateBankIDFunc           func(ctx context.Context, accountID string, bankID int64) error
 	GetBalanceSumBySubtypeFunc func(ctx context.Context, userID int64, subtypes []string) (float64, error)
+	SoftRemoveFunc             func(ctx context.Context, id string) error
+	RestoreFunc                func(ctx context.Context, id string) error
+	DeleteByItemIDFunc         func(ctx context.Context, itemID string) error
+	ListByItemIDFunc           func(ctx context.Context, itemID string) ([]*account.Account, error)
 }
 
 func (m *MockAccountRepo) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
@@ -167,6 +175,34 @@ func (m *MockAccountRepo) UpdateBankID(ctx context.Context, accountID string, ba
 func (m *MockAccountRepo) ListByUserIDWithBank(ctx context.Context, userID int64) ([]*account.AccountWithBank, error) {
 	if m.ListByUserIDWithBankFunc != nil {
 		return m.ListByUserIDWithBankFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+func (m *MockAccountRepo) SoftRemove(ctx context.Context, id string) error {
+	if m.SoftRemoveFunc != nil {
+		return m.SoftRemoveFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) Restore(ctx context.Context, id string) error {
+	if m.RestoreFunc != nil {
+		return m.RestoreFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) DeleteByItemID(ctx context.Context, itemID string) error {
+	if m.DeleteByItemIDFunc != nil {
+		return m.DeleteByItemIDFunc(ctx, itemID)
+	}
+	return nil
+}
+
+func (m *MockAccountRepo) ListByItemID(ctx context.Context, itemID string) ([]*account.Account, error) {
+	if m.ListByItemIDFunc != nil {
+		return m.ListByItemIDFunc(ctx, itemID)
 	}
 	return nil, nil
 }
@@ -291,7 +327,7 @@ func TestSyncUserAccounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			accRepo := tt.mockAccount()
-			accService := account.NewService(accRepo)
+			accService := account.NewService(accRepo, nil, nil)
 
 			svc := NewAccountSyncService(
 				tt.mockClient(),
