@@ -766,6 +766,61 @@ func (r *AccountRepository) ListByItemID(ctx context.Context, itemID string) ([]
 	return accounts, nil
 }
 
+// DeleteBankData atomically deletes all transactions for the item's accounts,
+// deletes the accounts, and soft-deletes the item in a single transaction.
+func (r *AccountRepository) DeleteBankData(ctx context.Context, itemID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Collect account IDs belonging to this item
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM accounts WHERE item_id = $1`, itemID)
+	if err != nil {
+		return fmt.Errorf("failed to list accounts for item: %w", err)
+	}
+	var accountIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to scan account id: %w", err)
+		}
+		accountIDs = append(accountIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating account ids: %w", err)
+	}
+
+	// Delete transactions for each account
+	for _, accID := range accountIDs {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM transactions WHERE account_id = $1`, accID); err != nil {
+			return fmt.Errorf("failed to delete transactions for account %s: %w", accID, err)
+		}
+	}
+
+	// Delete all accounts belonging to this item
+	if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE item_id = $1`, itemID); err != nil {
+		return fmt.Errorf("failed to delete accounts for item: %w", err)
+	}
+
+	// Soft-delete the item
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE items SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+		itemID,
+	); err != nil {
+		return fmt.Errorf("failed to soft-delete item: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit bank data deletion: %w", err)
+	}
+
+	return nil
+}
+
 // Helper functions
 
 func nullString(s string) sql.NullString {

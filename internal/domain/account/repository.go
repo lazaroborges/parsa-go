@@ -49,4 +49,8 @@ type Repository interface {
 
 	// ListByItemID retrieves all accounts belonging to an item
 	ListByItemID(ctx context.Context, itemID string) ([]*Account, error)
+
+	// DeleteBankData atomically deletes all transactions for the item's accounts,
+	// deletes the accounts, and soft-deletes the item in a single transaction.
+	DeleteBankData(ctx context.Context, itemID string) error
 }

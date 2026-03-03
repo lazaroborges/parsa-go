@@ -3,8 +3,6 @@ package account
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log"
 
 	"parsa/internal/domain/transaction"
 	"parsa/internal/models"
@@ -182,6 +180,7 @@ func (s *Service) RestoreAccount(ctx context.Context, accountID string, userID i
 
 // DeleteBank deletes all accounts and their transactions for the bank connection (item)
 // associated with the given account, then soft-deletes the item itself.
+// All destructive operations run inside a single database transaction.
 func (s *Service) DeleteBank(ctx context.Context, accountID string, userID int64) error {
 	acc, err := s.GetAccount(ctx, accountID, userID)
 	if err != nil {
@@ -192,25 +191,5 @@ func (s *Service) DeleteBank(ctx context.Context, accountID string, userID int64
 		return ErrAccountNoItem
 	}
 
-	accounts, err := s.repo.ListByItemID(ctx, acc.ItemID)
-	if err != nil {
-		return fmt.Errorf("failed to list accounts for item: %w", err)
-	}
-
-	for _, a := range accounts {
-		if err := s.transactionRepo.DeleteByAccountID(ctx, a.ID); err != nil {
-			log.Printf("Error deleting transactions for account %s: %v", a.ID, err)
-			return fmt.Errorf("failed to delete transactions for account %s: %w", a.ID, err)
-		}
-	}
-
-	if err := s.repo.DeleteByItemID(ctx, acc.ItemID); err != nil {
-		return fmt.Errorf("failed to delete accounts for item: %w", err)
-	}
-
-	if err := s.itemRepo.SoftDelete(ctx, acc.ItemID); err != nil {
-		return fmt.Errorf("failed to soft-delete item: %w", err)
-	}
-
-	return nil
+	return s.repo.DeleteBankData(ctx, acc.ItemID)
 }
