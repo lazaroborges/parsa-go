@@ -44,9 +44,9 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 
 	mux.Handle("/api/users/me", authMiddleware(http.HandlerFunc(deps.UserHandler.HandleMe)))
 	mux.Handle("/api/accounts/", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleListAccounts)))
-	mux.Handle("/api/accounts/{id}/remove", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleRemoveAccount)))
-	mux.Handle("/api/accounts/{id}/restore", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleRestoreAccount)))
-	mux.Handle("/api/accounts/{id}/delete-bank", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleDeleteBank)))
+	mux.Handle("/api/accounts/remove/{id}", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleRemoveAccount)))
+	mux.Handle("/api/accounts/restore/{id}", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleRestoreAccount)))
+	mux.Handle("/api/accounts/delete-bank/{id}", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleDeleteBank)))
 	mux.Handle("/api/accounts/{id}", authMiddleware(http.HandlerFunc(deps.AccountHandler.HandleAccountByID)))
 	mux.Handle("/api/transactions/", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleListTransactions)))
 	mux.Handle("/api/transactions/update", authMiddleware(http.HandlerFunc(deps.TransactionHandler.HandleBatchTransactions)))

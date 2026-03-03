@@ -281,7 +281,7 @@ func toAccountResponse(acc *account.AccountWithBank) AccountResponse {
 	}
 }
 
-// HandleRemoveAccount soft-removes an account (POST /api/accounts/{id}/remove)
+// HandleRemoveAccount soft-removes an account (POST /api/accounts/remove/{id})
 func (h *AccountHandler) HandleRemoveAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -320,7 +320,7 @@ func (h *AccountHandler) HandleRemoveAccount(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }
 
-// HandleRestoreAccount restores a previously removed account (POST /api/accounts/{id}/restore)
+// HandleRestoreAccount restores a previously removed account (POST /api/accounts/restore/{id})
 func (h *AccountHandler) HandleRestoreAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -359,7 +359,7 @@ func (h *AccountHandler) HandleRestoreAccount(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
 }
 
-// HandleDeleteBank deletes all accounts for the bank connection (POST /api/accounts/{id}/delete-bank)
+// HandleDeleteBank deletes all accounts for the bank connection (POST /api/accounts/delete-bank/{id})
 func (h *AccountHandler) HandleDeleteBank(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
