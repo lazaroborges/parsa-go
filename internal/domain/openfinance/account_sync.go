@@ -160,7 +160,10 @@ func (s *AccountSyncService) syncAccount(ctx context.Context, userID int64, apiA
 	// Skip removed accounts — don't re-sync them
 	if exists {
 		existing, err := s.accountService.GetAccountByID(ctx, apiAccount.AccountID)
-		if err == nil && existing != nil && existing.RemovedAt != nil {
+		if err != nil {
+			return fmt.Errorf("failed to load existing account: %w", err)
+		}
+		if existing != nil && existing.RemovedAt != nil {
 			log.Printf("User %d: Skipping removed account %s", userID, apiAccount.AccountID)
 			return nil
 		}
