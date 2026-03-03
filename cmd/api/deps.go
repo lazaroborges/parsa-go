@@ -139,7 +139,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	notificationHandler := httphandlers.NewNotificationHandler(notificationService)
 
 	userHandler := httphandlers.NewUserHandler(userRepo, accountRepo, ofClient, accountSyncService, transactionSyncService, billSyncService, notificationService, msgs)
-	accountHandler := httphandlers.NewAccountHandler(accountService)
+	accountHandler := httphandlers.NewAccountHandler(accountService, transactionSyncService, billSyncService)
 	tagRepo := postgres.NewTagRepository(db)
 	tagHandler := httphandlers.NewTagHandler(tagRepo)
 

@@ -171,17 +171,12 @@ func (s *Service) RemoveAccount(ctx context.Context, accountID string, userID in
 	return s.repo.SoftRemove(ctx, accountID)
 }
 
-// RestoreAccount restores a previously removed account after verifying ownership
+// RestoreAccount restores a previously removed account after verifying ownership.
+// Nulls removed_at; the repo returns ErrAccountNotRemoved if the account was not removed.
 func (s *Service) RestoreAccount(ctx context.Context, accountID string, userID int64) error {
-	acc, err := s.GetAccount(ctx, accountID, userID)
-	if err != nil {
+	if _, err := s.GetAccount(ctx, accountID, userID); err != nil {
 		return err
 	}
-
-	if acc.RemovedAt == nil {
-		return ErrAccountNotRemoved
-	}
-
 	return s.repo.Restore(ctx, accountID)
 }
 

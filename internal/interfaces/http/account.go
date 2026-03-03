@@ -1,23 +1,35 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 
 	"parsa/internal/domain/account"
+	"parsa/internal/domain/openfinance"
 	"parsa/internal/shared/middleware"
 )
 
 // AccountHandler is the refactored handler using the service layer
 type AccountHandler struct {
-	accountService *account.Service
+	accountService         *account.Service
+	transactionSyncService *openfinance.TransactionSyncService
+	billSyncService        *openfinance.BillSyncService
 }
 
 // NewAccountHandler creates a new account handler with service layer
-func NewAccountHandler(accountService *account.Service) *AccountHandler {
-	return &AccountHandler{accountService: accountService}
+func NewAccountHandler(
+	accountService *account.Service,
+	transactionSyncService *openfinance.TransactionSyncService,
+	billSyncService *openfinance.BillSyncService,
+) *AccountHandler {
+	return &AccountHandler{
+		accountService:         accountService,
+		transactionSyncService: transactionSyncService,
+		billSyncService:        billSyncService,
+	}
 }
 
 // HTTP request/response types (transport layer concerns)
@@ -353,6 +365,30 @@ func (h *AccountHandler) HandleRestoreAccount(w http.ResponseWriter, r *http.Req
 			http.Error(w, "Failed to restore account", http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// Trigger full transaction sync in background (account was removed, needs full history re-fetch)
+	if h.transactionSyncService != nil && h.billSyncService != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			log.Printf("Starting full transaction sync for user %d after account restore", userID)
+			txResult, err := h.transactionSyncService.SyncUserTransactions(ctx, userID, true)
+			if err != nil {
+				log.Printf("Error syncing transactions for user %d after restore: %v", userID, err)
+				return
+			}
+			log.Printf("Transaction sync after restore completed for user %d: created=%d, updated=%d", userID, txResult.Created, txResult.Updated)
+
+			log.Printf("Starting bill sync for user %d after restore", userID)
+			billResult, err := h.billSyncService.SyncUserBills(ctx, userID)
+			if err != nil {
+				log.Printf("Error syncing bills for user %d after restore: %v", userID, err)
+				return
+			}
+			log.Printf("Bill sync after restore completed for user %d: created=%d, updated=%d", userID, billResult.Created, billResult.Updated)
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")

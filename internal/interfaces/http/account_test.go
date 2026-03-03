@@ -186,7 +186,7 @@ func TestHandleListAccounts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.mockRepo()
 			service := account.NewService(repo, nil, nil)
-			handler := NewAccountHandler(service)
+			handler := NewAccountHandler(service, nil, nil)
 
 			req, _ := http.NewRequest(http.MethodGet, "/api/accounts/", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
@@ -205,7 +205,7 @@ func TestHandleListAccounts(t *testing.T) {
 func TestHandleListAccounts_MethodNotAllowed(t *testing.T) {
 	repo := &MockAccountRepo{}
 	service := account.NewService(repo, nil, nil)
-	handler := NewAccountHandler(service)
+	handler := NewAccountHandler(service, nil, nil)
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/accounts/", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, int64(1))
