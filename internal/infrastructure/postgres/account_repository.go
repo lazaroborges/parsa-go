@@ -669,6 +669,14 @@ func (r *AccountRepository) SoftRemove(ctx context.Context, id string) error {
 	}
 
 	if rows == 0 {
+		var removedAt sql.NullTime
+		checkErr := r.db.QueryRowContext(ctx, `SELECT removed_at FROM accounts WHERE id = $1`, id).Scan(&removedAt)
+		if checkErr == sql.ErrNoRows {
+			return account.ErrAccountNotFound
+		}
+		if checkErr != nil {
+			return fmt.Errorf("failed to verify account state: %w", checkErr)
+		}
 		return account.ErrAccountAlreadyRemoved
 	}
 
