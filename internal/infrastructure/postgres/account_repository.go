@@ -482,7 +482,7 @@ func (r *AccountRepository) FindByMatch(ctx context.Context, userID int64, name,
 		SELECT id, user_id, item_id, name, account_type, subtype, currency, balance, bank_id,
 		       provider_updated_at, provider_created_at, created_at, updated_at
 		FROM accounts
-		WHERE user_id = $1 AND name = $2 AND account_type = $3 AND subtype = $4
+		WHERE user_id = $1 AND name = $2 AND account_type = $3 AND subtype = $4 AND removed_at IS NULL
 		LIMIT 1
 	`
 
