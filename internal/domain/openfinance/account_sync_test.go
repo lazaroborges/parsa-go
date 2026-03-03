@@ -126,6 +126,7 @@ type MockAccountRepo struct {
 	RestoreFunc                func(ctx context.Context, id string) error
 	DeleteByItemIDFunc         func(ctx context.Context, itemID string) error
 	ListByItemIDFunc           func(ctx context.Context, itemID string) ([]*account.Account, error)
+	DeleteBankDataFunc         func(ctx context.Context, itemID string) error
 }
 
 func (m *MockAccountRepo) GetBalanceSumBySubtype(ctx context.Context, userID int64, subtypes []string) (float64, error) {
@@ -205,6 +206,12 @@ func (m *MockAccountRepo) ListByItemID(ctx context.Context, itemID string) ([]*a
 		return m.ListByItemIDFunc(ctx, itemID)
 	}
 	return nil, nil
+}
+func (m *MockAccountRepo) DeleteBankData(ctx context.Context, itemID string) error {
+	if m.DeleteBankDataFunc != nil {
+		return m.DeleteBankDataFunc(ctx, itemID)
+	}
+	return nil
 }
 
 func TestSyncUserAccounts(t *testing.T) {
@@ -327,7 +334,7 @@ func TestSyncUserAccounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			accRepo := tt.mockAccount()
-			accService := account.NewService(accRepo, nil, nil)
+			accService := account.NewService(accRepo, tt.mockItem(), &MockTransactionRepo{})
 
 			svc := NewAccountSyncService(
 				tt.mockClient(),
