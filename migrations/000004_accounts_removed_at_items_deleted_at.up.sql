@@ -10,4 +10,4 @@ ALTER TABLE public.items ADD COLUMN deleted_at timestamp with time zone;
 
 -- Transactions: add notified_at (null for new rows; set to current time for existing rows)
 ALTER TABLE public.transactions ADD COLUMN notified_at timestamp with time zone;
-UPDATE public.transactions SET notified_at = CURRENT_TIMESTAMP;
+UPDATE public.transactions SET notified_at = CURRENT_TIMESTAMP WHERE notified_at IS NULL;
