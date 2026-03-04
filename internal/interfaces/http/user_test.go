@@ -16,13 +16,15 @@ import (
 
 // MockUserRepo implements user.Repository for testing
 type MockUserRepo struct {
-	CreateFunc                   func(ctx context.Context, params user.CreateUserParams) (*user.User, error)
-	GetByIDFunc                  func(ctx context.Context, id int64) (*user.User, error)
-	GetByEmailFunc               func(ctx context.Context, email string) (*user.User, error)
-	GetByOAuthFunc               func(ctx context.Context, provider, oauthID string) (*user.User, error)
-	ListFunc                     func(ctx context.Context) ([]*user.User, error)
-	UpdateFunc                   func(ctx context.Context, userID int64, params user.UpdateUserParams) (*user.User, error)
-	ListUsersWithProviderKeyFunc func(ctx context.Context) ([]*user.User, error)
+	CreateFunc                          func(ctx context.Context, params user.CreateUserParams) (*user.User, error)
+	GetByIDFunc                         func(ctx context.Context, id int64) (*user.User, error)
+	GetByEmailFunc                      func(ctx context.Context, email string) (*user.User, error)
+	GetByOAuthFunc                      func(ctx context.Context, provider, oauthID string) (*user.User, error)
+	ListFunc                            func(ctx context.Context) ([]*user.User, error)
+	UpdateFunc                          func(ctx context.Context, userID int64, params user.UpdateUserParams) (*user.User, error)
+	ListUsersWithProviderKeyFunc        func(ctx context.Context) ([]*user.User, error)
+	ClearProviderKeyFunc                func(ctx context.Context, userID int64) error
+	SetHasFinishedOpenfinanceFlowFunc   func(ctx context.Context, userID int64, value bool) error
 }
 
 func (m *MockUserRepo) Create(ctx context.Context, params user.CreateUserParams) (*user.User, error) {
@@ -74,8 +76,22 @@ func (m *MockUserRepo) ListUsersWithProviderKey(ctx context.Context) ([]*user.Us
 	return nil, nil
 }
 
+func (m *MockUserRepo) ClearProviderKey(ctx context.Context, userID int64) error {
+	if m.ClearProviderKeyFunc != nil {
+		return m.ClearProviderKeyFunc(ctx, userID)
+	}
+	return nil
+}
+
+func (m *MockUserRepo) SetHasFinishedOpenfinanceFlow(ctx context.Context, userID int64, value bool) error {
+	if m.SetHasFinishedOpenfinanceFlowFunc != nil {
+		return m.SetHasFinishedOpenfinanceFlowFunc(ctx, userID, value)
+	}
+	return nil
+}
+
 func newTestUserHandler(userRepo *MockUserRepo, accountRepo *MockAccountRepo) *UserHandler {
-	return NewUserHandler(userRepo, accountRepo, nil, nil, nil, nil)
+	return NewUserHandler(userRepo, accountRepo, nil, nil, nil, nil, nil, nil)
 }
 
 func TestHandleMe_Get(t *testing.T) {
