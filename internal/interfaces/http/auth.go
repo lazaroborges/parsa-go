@@ -222,7 +222,9 @@ func shouldUseAuthCodeFlowFromVersion(version string) bool {
 
 // mobileRedirectURL builds the deep-link redirect URL for mobile OAuth callbacks.
 func (h *AuthHandler) mobileRedirectURL(param, value string) string {
-	return fmt.Sprintf("%s://oauth-callback?%s=%s", h.mobileAppScheme, param, value)
+	q := url.Values{}
+	q.Set(param, value)
+	return fmt.Sprintf("%s://oauth-callback?%s", h.mobileAppScheme, q.Encode())
 }
 
 // HandleCallback processes the OAuth callback for web (issues a JWT and sets cookie)
