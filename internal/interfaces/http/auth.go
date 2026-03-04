@@ -33,6 +33,9 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, authCodeStore *auth.AuthCodeStore, mobileCallbackURL, webCallbackURL, mobileAppScheme string) *AuthHandler {
+	if authCodeStore == nil {
+		panic("authCodeStore is required")
+	}
 	return &AuthHandler{
 		userRepo:          userRepo,
 		oauthProvider:     oauthProvider,
@@ -42,6 +45,7 @@ func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthP
 		webCallbackURL:    webCallbackURL,
 		mobileAppScheme:   mobileAppScheme,
 	}
+}
 }
 
 // SetAppleOAuthProvider sets the Apple OAuth provider (optional, called after construction)
