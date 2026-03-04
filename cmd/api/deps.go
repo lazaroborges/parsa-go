@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"parsa/internal/domain/account"
 	"parsa/internal/domain/cousinrule"
@@ -34,7 +35,8 @@ type Dependencies struct {
 	NotificationHandler *httphandlers.NotificationHandler
 
 	// Auth
-	JWT *auth.JWT
+	JWT           *auth.JWT
+	AuthCodeStore *auth.AuthCodeStore
 
 	// Sync services (for scheduler)
 	AccountSyncService     *openfinance.AccountSyncService
@@ -111,6 +113,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 
 	// Initialize auth components
 	jwt := auth.NewJWT(cfg.JWT.Secret)
+	authCodeStore := auth.NewAuthCodeStore(5 * time.Minute)
 	googleOAuth := auth.NewGoogleOAuthProvider(
 		cfg.OAuth.Google.ClientID,
 		cfg.OAuth.Google.ClientSecret,
@@ -118,7 +121,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	)
 
 	// Initialize handlers
-	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL)
+	authHandler := httphandlers.NewAuthHandler(userRepo, googleOAuth, jwt, authCodeStore, cfg.OAuth.Google.MobileCallbackURL, cfg.OAuth.Google.WebCallbackURL, cfg.OAuth.MobileAppScheme)
 
 	// Initialize Apple OAuth if configured
 	if cfg.OAuth.Apple.PrivateKeyPath != "" {
@@ -165,6 +168,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		CousinRuleHandler:      cousinRuleHandler,
 		NotificationHandler:    notificationHandler,
 		JWT:                    jwt,
+		AuthCodeStore:          authCodeStore,
 		AccountSyncService:     accountSyncService,
 		TransactionSyncService: transactionSyncService,
 		BillSyncService:        billSyncService,
@@ -175,11 +179,12 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 
 // Close releases all resources held by dependencies.
 func (d *Dependencies) Close() {
-	// Stop listeners first
 	if d.CousinListener != nil {
 		d.CousinListener.Stop()
 	}
-
+	if d.AuthCodeStore != nil {
+		d.AuthCodeStore.Stop()
+	}
 	if d.DB != nil {
 		d.DB.Close()
 	}

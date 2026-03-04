@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -22,20 +23,24 @@ type AuthHandler struct {
 	oauthProvider          auth.OAuthProvider
 	appleOAuthProvider     auth.OAuthProvider
 	jwt                    *auth.JWT
+	authCodeStore          *auth.AuthCodeStore
 	mobileCallbackURL      string
 	webCallbackURL         string
 	appleMobileCallbackURL string
+	mobileAppScheme        string
 	appleCallbackTemplate  *template.Template
 	templateOnce           sync.Once
 }
 
-func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, mobileCallbackURL, webCallbackURL string) *AuthHandler {
+func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, authCodeStore *auth.AuthCodeStore, mobileCallbackURL, webCallbackURL, mobileAppScheme string) *AuthHandler {
 	return &AuthHandler{
 		userRepo:          userRepo,
 		oauthProvider:     oauthProvider,
 		jwt:               jwt,
+		authCodeStore:     authCodeStore,
 		mobileCallbackURL: mobileCallbackURL,
 		webCallbackURL:    webCallbackURL,
+		mobileAppScheme:   mobileAppScheme,
 	}
 }
 
@@ -79,21 +84,22 @@ func (h *AuthHandler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(AuthURLResponse{URL: authURL})
 }
 
-// HandleMobileAuthStart generates OAuth URL for mobile app
+// HandleMobileAuthStart generates OAuth URL for mobile app.
+// Embeds the client version from User-Agent into the OAuth state so the callback
+// can determine which flow to use (the callback User-Agent is the browser, not the app).
 func (h *AuthHandler) HandleMobileAuthStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	state, err := generateState()
+	state, err := generateStateWithVersion(r.UserAgent())
 	if err != nil {
 		log.Printf("Error generating OAuth state: %v", err)
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
 
-	// Generate OAuth URL with mobile callback URL
 	authURL := h.oauthProvider.GetAuthURL(state, h.mobileCallbackURL)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -106,6 +112,113 @@ func generateState() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// generateStateWithVersion creates an OAuth state that embeds the client version.
+// Format: base64url(random_bytes).version_string
+// This allows the callback to determine the client version even when the callback
+// comes from the OAuth provider's server (e.g. Apple form_post).
+func generateStateWithVersion(ua string) (string, error) {
+	state, err := generateState()
+	if err != nil {
+		return "", err
+	}
+	version := extractParsaVersion(ua)
+	if version != "" {
+		state = state + "." + version
+	}
+	return state, nil
+}
+
+// parseStateVersion extracts the version suffix from a state parameter.
+// State format: "base64urlRandomBytes.major.minor.patch"
+// Base64url characters are [A-Za-z0-9_-=], so the first '.' always marks the version boundary.
+func parseStateVersion(state string) (string, string) {
+	idx := strings.Index(state, ".")
+	if idx < 0 {
+		return state, ""
+	}
+	candidate := state[idx+1:]
+	_, _, _, ok := parseVersionString(candidate)
+	if ok {
+		return state[:idx], candidate
+	}
+	return state, ""
+}
+
+// extractParsaVersion extracts the version string from a Parsa User-Agent.
+// UA format: ({os}) Parsa/{major}.{minor}.{patch}+{build}
+// Returns "2.16.0" or empty string if not a Parsa client.
+func extractParsaVersion(ua string) string {
+	idx := strings.Index(ua, "Parsa/")
+	if idx < 0 {
+		return ""
+	}
+	versionPart := ua[idx+len("Parsa/"):]
+	if plusIdx := strings.Index(versionPart, "+"); plusIdx >= 0 {
+		versionPart = versionPart[:plusIdx]
+	}
+	if spaceIdx := strings.Index(versionPart, " "); spaceIdx >= 0 {
+		versionPart = versionPart[:spaceIdx]
+	}
+	return versionPart
+}
+
+// parseParsaVersion parses a Parsa User-Agent and returns the semantic version.
+func parseParsaVersion(ua string) (major, minor, patch int, ok bool) {
+	version := extractParsaVersion(ua)
+	if version == "" {
+		return 0, 0, 0, false
+	}
+	return parseVersionString(version)
+}
+
+func parseVersionString(version string) (major, minor, patch int, ok bool) {
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	var err error
+	major, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	patch, err = strconv.Atoi(parts[2])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return major, minor, patch, true
+}
+
+// shouldUseAuthCodeFlow returns true if the client supports the auth code exchange flow.
+// Clients >= 2.16.0 use the new flow. Unknown/non-Parsa clients default to the new secure flow.
+func shouldUseAuthCodeFlow(ua string) bool {
+	major, minor, _, ok := parseParsaVersion(ua)
+	if !ok {
+		return true
+	}
+	return major > 2 || (major == 2 && minor >= 16)
+}
+
+// shouldUseAuthCodeFlowFromVersion checks a version string (e.g. "2.16.0") directly.
+func shouldUseAuthCodeFlowFromVersion(version string) bool {
+	if version == "" {
+		return true
+	}
+	major, minor, _, ok := parseVersionString(version)
+	if !ok {
+		return true
+	}
+	return major > 2 || (major == 2 && minor >= 16)
+}
+
+// mobileRedirectURL builds the deep-link redirect URL for mobile OAuth callbacks.
+func (h *AuthHandler) mobileRedirectURL(param, value string) string {
+	return fmt.Sprintf("%s://oauth-callback?%s=%s", h.mobileAppScheme, param, value)
 }
 
 // HandleCallback processes the OAuth callback for web (issues a JWT and sets cookie)
@@ -187,6 +300,7 @@ func (h *AuthHandler) HandleMobileAuthCallback(w http.ResponseWriter, r *http.Re
 	}
 
 	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
 	oauthError := r.URL.Query().Get("error")
 
 	if oauthError != "" {
@@ -258,12 +372,26 @@ func (h *AuthHandler) HandleMobileAuthCallback(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Redirect to mobile app with token
-	redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", jwtToken)
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	// Extract client version from state (embedded during /start by the actual app)
+	_, clientVersion := parseStateVersion(state)
+	if shouldUseAuthCodeFlowFromVersion(clientVersion) {
+		authCode, err := h.authCodeStore.Generate(jwtToken, userModel.ID)
+		if err != nil {
+			log.Printf("Mobile OAuth: Failed to generate auth code: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "auth_code_failed"})
+			return
+		}
+		http.Redirect(w, r, h.mobileRedirectURL("code", authCode), http.StatusFound)
+	} else {
+		http.Redirect(w, r, h.mobileRedirectURL("token", jwtToken), http.StatusFound)
+	}
 }
 
-// HandleAppleMobileAuthStart generates Apple OAuth URL for mobile app
+// HandleAppleMobileAuthStart generates Apple OAuth URL for mobile app.
+// Embeds the client version from User-Agent into the OAuth state so the callback
+// can determine which flow to use (Apple callbacks come from Apple's servers, not the app).
 func (h *AuthHandler) HandleAppleMobileAuthStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -275,7 +403,7 @@ func (h *AuthHandler) HandleAppleMobileAuthStart(w http.ResponseWriter, r *http.
 		return
 	}
 
-	state, err := generateState()
+	state, err := generateStateWithVersion(r.UserAgent())
 	if err != nil {
 		log.Printf("Error generating OAuth state: %v", err)
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
@@ -311,19 +439,23 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	}
 
 	code := r.FormValue("code")
+	state := r.FormValue("state")
 	oauthError := r.FormValue("error")
 	userJSON := r.FormValue("user") // Only sent on first authorization
 
+	// Extract client version embedded in the state during /start
+	_, clientVersion := parseStateVersion(state)
+	useAuthCode := shouldUseAuthCodeFlowFromVersion(clientVersion)
+
 	if oauthError != "" {
 		log.Printf("Apple OAuth error: %s", oauthError)
-		// Render HTML redirect page with error
-		h.renderAppleCallbackPage(w, r, "", oauthError)
+		h.renderAppleCallbackPage(w, r, "", "", oauthError)
 		return
 	}
 
 	if code == "" {
 		log.Printf("Apple OAuth: No code received")
-		h.renderAppleCallbackPage(w, r, "", "code_required")
+		h.renderAppleCallbackPage(w, r, "", "", "code_required")
 		return
 	}
 
@@ -333,7 +465,7 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	token, err := h.appleOAuthProvider.ExchangeCode(ctx, code, h.appleMobileCallbackURL)
 	if err != nil {
 		log.Printf("Apple OAuth: Failed to exchange code: %v", err)
-		h.renderAppleCallbackPage(w, r, "", "token_exchange_failed")
+		h.renderAppleCallbackPage(w, r, "", "", "token_exchange_failed")
 		return
 	}
 
@@ -341,7 +473,7 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	userInfo, err := h.appleOAuthProvider.GetUserInfo(ctx, token.AccessToken)
 	if err != nil {
 		log.Printf("Apple OAuth: Failed to get user info: %v", err)
-		h.renderAppleCallbackPage(w, r, "", "user_info_failed")
+		h.renderAppleCallbackPage(w, r, "", "", "user_info_failed")
 		return
 	}
 
@@ -350,7 +482,6 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	if userJSON != "" {
 		if err := json.Unmarshal([]byte(userJSON), &appleUser); err != nil {
 			log.Printf("Apple OAuth: Failed to parse user JSON: %v", err)
-			// Non-fatal - continue without name
 		} else {
 			userInfo.FirstName = appleUser.Name.FirstName
 			userInfo.LastName = appleUser.Name.LastName
@@ -363,7 +494,6 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	// Find or create user
 	userModel, err := h.userRepo.GetByOAuth(ctx, "apple", userInfo.ID)
 	if err != nil {
-		// User doesn't exist, create new user
 		provider := "apple"
 		userModel, err = h.userRepo.Create(ctx, user.CreateUserParams{
 			Email:         userInfo.Email,
@@ -372,11 +502,10 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 			OAuthID:       &userInfo.ID,
 			FirstName:     userInfo.FirstName,
 			LastName:      userInfo.LastName,
-			// Apple doesn't provide avatar
 		})
 		if err != nil {
 			log.Printf("Apple OAuth: Failed to create user: %v", err)
-			h.renderAppleCallbackPage(w, r, "", "user_creation_failed")
+			h.renderAppleCallbackPage(w, r, "", "", "user_creation_failed")
 			return
 		}
 	}
@@ -385,12 +514,21 @@ func (h *AuthHandler) HandleAppleMobileAuthCallback(w http.ResponseWriter, r *ht
 	jwtToken, err := h.jwt.Generate(userModel.ID, userModel.Email)
 	if err != nil {
 		log.Printf("Apple OAuth: Error generating JWT for user %d: %v", userModel.ID, err)
-		h.renderAppleCallbackPage(w, r, "", "jwt_generation_failed")
+		h.renderAppleCallbackPage(w, r, "", "", "jwt_generation_failed")
 		return
 	}
 
-	// Render HTML redirect page with token
-	h.renderAppleCallbackPage(w, r, jwtToken, "")
+	if useAuthCode {
+		authCode, err := h.authCodeStore.Generate(jwtToken, userModel.ID)
+		if err != nil {
+			log.Printf("Apple OAuth: Failed to generate auth code: %v", err)
+			h.renderAppleCallbackPage(w, r, "", "", "auth_code_failed")
+			return
+		}
+		h.renderAppleCallbackPage(w, r, "", authCode, "")
+	} else {
+		h.renderAppleCallbackPage(w, r, jwtToken, "", "")
+	}
 }
 
 type RegisterRequest struct {
@@ -546,9 +684,9 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback
-func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, errorMsg string) {
-	// Thread-safe one-time template initialization
+// renderAppleCallbackPage renders the HTML redirect page for Apple OAuth callback.
+// Pass token for legacy flow, authCode for the new secure flow.
+func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Request, token, authCode, errorMsg string) {
 	var templateErr error
 	h.templateOnce.Do(func() {
 		h.appleCallbackTemplate, templateErr = template.ParseFS(web.FS, "apple-oauth-callback.html")
@@ -560,55 +698,102 @@ func (h *AuthHandler) renderAppleCallbackPage(w http.ResponseWriter, r *http.Req
 	// If template failed to load, use fallback redirect
 	if h.appleCallbackTemplate == nil {
 		if errorMsg != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", errorMsg)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
+			http.Redirect(w, r, h.mobileRedirectURL("error", errorMsg), http.StatusFound)
+		} else if authCode != "" {
+			http.Redirect(w, r, h.mobileRedirectURL("code", authCode), http.StatusFound)
 		} else if token != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
+			http.Redirect(w, r, h.mobileRedirectURL("token", token), http.StatusFound)
 		} else {
 			http.Error(w, "OAuth callback failed", http.StatusInternalServerError)
 		}
 		return
 	}
 
-	// Template data - encode as JSON for safe embedding in JavaScript
 	type templateData struct {
-		TokenJSON template.JS
-		ErrorJSON template.JS
+		TokenJSON  template.JS
+		CodeJSON   template.JS
+		ErrorJSON  template.JS
+		SchemeJSON template.JS
 	}
 
-	var tokenJSON, errorJSON template.JS
-	if token != "" {
-		tokenBytes, _ := json.Marshal(token)
-		tokenJSON = template.JS(tokenBytes)
-	} else {
-		tokenJSON = template.JS("null")
-	}
-	if errorMsg != "" {
-		errorBytes, _ := json.Marshal(errorMsg)
-		errorJSON = template.JS(errorBytes)
-	} else {
-		errorJSON = template.JS("null")
+	jsNull := template.JS("null")
+
+	toJS := func(s string) template.JS {
+		if s == "" {
+			return jsNull
+		}
+		b, _ := json.Marshal(s)
+		return template.JS(b)
 	}
 
 	data := templateData{
-		TokenJSON: tokenJSON,
-		ErrorJSON: errorJSON,
+		TokenJSON:  toJS(token),
+		CodeJSON:   toJS(authCode),
+		ErrorJSON:  toJS(errorMsg),
+		SchemeJSON: toJS(h.mobileAppScheme),
 	}
 
-	// Set content type and render
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.appleCallbackTemplate.Execute(w, data); err != nil {
 		log.Printf("Apple OAuth: Failed to render callback template: %v", err)
-		// Fallback redirect
 		if errorMsg != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?error=%s", errorMsg)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
+			http.Redirect(w, r, h.mobileRedirectURL("error", errorMsg), http.StatusFound)
+		} else if authCode != "" {
+			http.Redirect(w, r, h.mobileRedirectURL("code", authCode), http.StatusFound)
 		} else if token != "" {
-			redirectURL := fmt.Sprintf("com.parsa.app://oauth-callback?token=%s", token)
-			http.Redirect(w, r, redirectURL, http.StatusFound)
+			http.Redirect(w, r, h.mobileRedirectURL("token", token), http.StatusFound)
 		}
 	}
+}
+
+type AuthCodeExchangeRequest struct {
+	Code string `json:"code"`
+}
+
+// HandleMobileAuthExchange exchanges a one-time auth code for a JWT.
+// The auth code was issued during the OAuth callback redirect and is single-use with TTL.
+func (h *AuthHandler) HandleMobileAuthExchange(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req AuthCodeExchangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "code_required"})
+		return
+	}
+
+	jwtToken, userID, err := h.authCodeStore.Exchange(req.Code)
+	if err != nil {
+		log.Printf("Mobile OAuth exchange: invalid code: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_or_expired_code"})
+		return
+	}
+
+	userModel, err := h.userRepo.GetByID(r.Context(), userID)
+	if err != nil {
+		log.Printf("Mobile OAuth exchange: failed to fetch user %d: %v", userID, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "user_fetch_failed"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AuthResponse{
+		Token: jwtToken,
+		User:  userModel,
+	})
 }
 
 // setAuthCookie sets the JWT as an HttpOnly cookie
