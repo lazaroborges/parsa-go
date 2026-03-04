@@ -15,7 +15,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 )
 
 type Config struct {
@@ -48,7 +48,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceName(cfg.ServiceName),
-			semconv.DeploymentEnvironment(cfg.Environment),
+			semconv.DeploymentEnvironmentName(cfg.Environment),
 		),
 	)
 	if err != nil {
