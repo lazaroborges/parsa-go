@@ -22,6 +22,23 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Validate authentication
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::Missing authentication credentials for Claude Code Action."
+            echo ""
+            echo "To fix this, add one of the following secrets to your repository:"
+            echo "  1. ANTHROPIC_API_KEY - Get one at https://console.anthropic.com/settings/keys"
+            echo "  2. CLAUDE_CODE_OAUTH_TOKEN - Generated via 'claude /install-github-app'"
+            echo ""
+            echo "Go to: Settings > Secrets and variables > Actions > New repository secret"
+            exit 1
+          fi
+          echo "Authentication credentials found."
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -32,3 +49,4 @@ jobs:
         uses: anthropics/claude-code-action@64c7a0ef71df67b14cb4471f4d9c8565c61042bf # v1.0.66
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
