@@ -3,10 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var mobileSchemeRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*$`)
 
 type Config struct {
 	Server     ServerConfig
@@ -155,7 +158,7 @@ func Load() (*Config, error) {
 	googleMobileURL := buildCallbackURL("/api/auth/oauth/mobile/callback", "GOOGLE_MOBILE_CALLBACK_URL")
 	appleMobileURL := buildCallbackURL("/api/auth/oauth/apple/mobile/callback", "APPLE_MOBILE_CALLBACK_URL")
 
-	mobileAppScheme := getEnv("MOBILE_APP_CALLBACK_SCHEME", "com.parsa.app")
+	mobileAppScheme := strings.TrimSpace(getEnv("MOBILE_APP_CALLBACK_SCHEME", "com.parsa.app"))
 
 	// Parse telemetry configuration
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
@@ -240,9 +243,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256")
 	}
 
-	// Validate mobile app scheme
-	if strings.Contains(cfg.OAuth.MobileAppScheme, "://") {
-		return nil, fmt.Errorf("MOBILE_APP_CALLBACK_SCHEME must not contain '://' (got %q)", cfg.OAuth.MobileAppScheme)
+	// Validate mobile app scheme (RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ))
+	if !mobileSchemeRE.MatchString(cfg.OAuth.MobileAppScheme) {
+		return nil, fmt.Errorf("MOBILE_APP_CALLBACK_SCHEME must be a valid URI scheme (got %q)", cfg.OAuth.MobileAppScheme)
 	}
 
 	// Validate TLS configuration

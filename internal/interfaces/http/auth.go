@@ -33,9 +33,6 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthProvider, jwt *auth.JWT, authCodeStore *auth.AuthCodeStore, mobileCallbackURL, webCallbackURL, mobileAppScheme string) *AuthHandler {
-	if authCodeStore == nil {
-		panic("authCodeStore is required")
-	}
 	return &AuthHandler{
 		userRepo:          userRepo,
 		oauthProvider:     oauthProvider,
@@ -45,7 +42,6 @@ func NewAuthHandler(userRepo *postgres.UserRepository, oauthProvider auth.OAuthP
 		webCallbackURL:    webCallbackURL,
 		mobileAppScheme:   mobileAppScheme,
 	}
-}
 }
 
 // SetAppleOAuthProvider sets the Apple OAuth provider (optional, called after construction)
@@ -222,9 +218,7 @@ func shouldUseAuthCodeFlowFromVersion(version string) bool {
 
 // mobileRedirectURL builds the deep-link redirect URL for mobile OAuth callbacks.
 func (h *AuthHandler) mobileRedirectURL(param, value string) string {
-	q := url.Values{}
-	q.Set(param, value)
-	return fmt.Sprintf("%s://oauth-callback?%s", h.mobileAppScheme, q.Encode())
+	return fmt.Sprintf("%s://oauth-callback?%s=%s", h.mobileAppScheme, param, value)
 }
 
 // HandleCallback processes the OAuth callback for web (issues a JWT and sets cookie)

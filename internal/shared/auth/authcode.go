@@ -20,10 +20,11 @@ type AuthCode struct {
 }
 
 type AuthCodeStore struct {
-	mu    sync.Mutex
-	codes map[string]*AuthCode
-	ttl   time.Duration
-	stop  chan struct{}
+	mu       sync.Mutex
+	codes    map[string]*AuthCode
+	ttl      time.Duration
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 func NewAuthCodeStore(ttl time.Duration) *AuthCodeStore {
@@ -94,5 +95,5 @@ func (s *AuthCodeStore) cleanup() {
 }
 
 func (s *AuthCodeStore) Stop() {
-	close(s.stop)
+	s.stopOnce.Do(func() { close(s.stop) })
 }
