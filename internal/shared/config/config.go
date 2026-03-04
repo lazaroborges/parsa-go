@@ -3,10 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var mobileSchemeRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*$`)
 
 type Config struct {
 	Server     ServerConfig
@@ -37,8 +40,9 @@ type DatabaseConfig struct {
 }
 
 type OAuthConfig struct {
-	Google GoogleOAuthConfig
-	Apple  AppleOAuthConfig
+	Google          GoogleOAuthConfig
+	Apple           AppleOAuthConfig
+	MobileAppScheme string
 }
 
 type GoogleOAuthConfig struct {
@@ -154,6 +158,8 @@ func Load() (*Config, error) {
 	googleMobileURL := buildCallbackURL("/api/auth/oauth/mobile/callback", "GOOGLE_MOBILE_CALLBACK_URL")
 	appleMobileURL := buildCallbackURL("/api/auth/oauth/apple/mobile/callback", "APPLE_MOBILE_CALLBACK_URL")
 
+	mobileAppScheme := strings.TrimSpace(getEnv("MOBILE_APP_CALLBACK_SCHEME", "com.parsa.app"))
+
 	// Parse telemetry configuration
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
 	otelServiceName := getEnv("OTEL_SERVICE_NAME", "parsa-api")
@@ -189,6 +195,7 @@ func Load() (*Config, error) {
 				PrivateKeyPath:    getEnv("APPLE_PRIVATE_KEY_PATH", ""),
 				MobileCallbackURL: appleMobileURL,
 			},
+			MobileAppScheme: mobileAppScheme,
 		},
 		JWT: JWTConfig{
 			Secret: getEnv("JWT_SECRET", ""),
@@ -234,6 +241,11 @@ func Load() (*Config, error) {
 	}
 	if len(cfg.Encryption.Key) != 32 {
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256")
+	}
+
+	// Validate mobile app scheme (RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ))
+	if !mobileSchemeRE.MatchString(cfg.OAuth.MobileAppScheme) {
+		return nil, fmt.Errorf("MOBILE_APP_CALLBACK_SCHEME must be a valid URI scheme (got %q)", cfg.OAuth.MobileAppScheme)
 	}
 
 	// Validate TLS configuration

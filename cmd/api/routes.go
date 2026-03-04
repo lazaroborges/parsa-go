@@ -34,6 +34,7 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 	// Mobile OAuth (Google)
 	mux.HandleFunc("/api/auth/oauth/mobile/start", deps.AuthHandler.HandleMobileAuthStart)
 	mux.HandleFunc("/api/auth/oauth/mobile/callback", deps.AuthHandler.HandleMobileAuthCallback)
+	mux.HandleFunc("/api/auth/oauth/mobile/exchange", deps.AuthHandler.HandleMobileAuthExchange)
 
 	// Apple OAuth (Mobile)
 	mux.HandleFunc("/api/auth/oauth/apple/mobile/start", deps.AuthHandler.HandleAppleMobileAuthStart)
