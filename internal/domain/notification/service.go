@@ -19,8 +19,8 @@ func NewService(repo Repository, messenger Messenger) *Service {
 	return &Service{repo: repo, messenger: messenger}
 }
 
-// RegisterDevice registers a device token for the authenticated user.
-// If the token already belongs to another user, it is reassigned.
+// RegisterDevice registers or replaces the device token for the authenticated user.
+// Each user has at most one active token; new registrations overwrite the previous one.
 // Creates default notification preferences if none exist.
 func (s *Service) RegisterDevice(ctx context.Context, params CreateDeviceTokenParams) (*DeviceToken, error) {
 	if err := params.Validate(); err != nil {
@@ -126,17 +126,16 @@ func (s *Service) SendToUser(ctx context.Context, userID int64, title, body, cat
 		return nil
 	}
 
-	// Get active device tokens
-	tokens, err := s.repo.GetActiveTokensByUserID(ctx, userID)
-	if err != nil {
+	// Get active device token
+	dt, err := s.repo.GetActiveTokenByUserID(ctx, userID)
+	if err != nil && !errors.Is(err, ErrDeviceTokenNotFound) {
 		return err
 	}
 
-	if len(tokens) == 0 {
-		log.Printf("No active device tokens for user %d", userID)
+	if dt == nil {
+		log.Printf("No active device token for user %d", userID)
 	}
 
-	// Add route from category if not present
 	if data == nil {
 		data = make(map[string]string)
 	}
@@ -144,14 +143,8 @@ func (s *Service) SendToUser(ctx context.Context, userID int64, title, body, cat
 		data["route"] = category
 	}
 
-	// Send to all active tokens via FCM (if messenger is configured)
-	if s.messenger != nil && len(tokens) > 0 {
-		tokenStrings := make([]string, len(tokens))
-		for i, t := range tokens {
-			tokenStrings[i] = t.Token
-		}
-
-		if err := s.messenger.SendMulticast(ctx, tokenStrings, title, body, data); err != nil {
+	if s.messenger != nil && dt != nil {
+		if err := s.messenger.Send(ctx, dt.Token, title, body, data); err != nil {
 			log.Printf("Error sending notification to user %d: %v", userID, err)
 		}
 	}
@@ -202,34 +195,29 @@ func (s *Service) SendSyncComplete(ctx context.Context, userID int64, msgs *mess
 		log.Printf("SendSyncComplete: messages nil for user %d, skipping", userID)
 		return
 	}
-	tokens, err := s.repo.GetActiveTokensByUserID(ctx, userID)
-	if err != nil {
-		log.Printf("SendSyncComplete: failed to get tokens for user %d: %v", userID, err)
+	dt, err := s.repo.GetActiveTokenByUserID(ctx, userID)
+	if err != nil && !errors.Is(err, ErrDeviceTokenNotFound) {
+		log.Printf("SendSyncComplete: failed to get token for user %d: %v", userID, err)
 		return
 	}
-	if len(tokens) == 0 {
-		log.Printf("SendSyncComplete: no active tokens for user %d", userID)
+	if dt == nil {
+		log.Printf("SendSyncComplete: no active token for user %d", userID)
 	}
 
 	text := msgs.SyncComplete
 	data := map[string]string{"route": CategoryGeneral}
 
-	if s.messenger != nil && len(tokens) > 0 {
-		tokenStrings := make([]string, len(tokens))
-		for i, t := range tokens {
-			tokenStrings[i] = t.Token
-		}
+	if s.messenger != nil && dt != nil {
+		tokens := []string{dt.Token}
 
-		// 1) Data-only: triggers in-app reload via onMessage
-		if err := s.messenger.SendDataOnly(ctx, tokenStrings, map[string]string{"action": "reload"}); err != nil {
+		if err := s.messenger.SendDataOnly(ctx, tokens, map[string]string{"action": "reload"}); err != nil {
 			log.Printf("SendSyncComplete: data-only send failed for user %d: %v", userID, err)
 		}
 
-		// 2) Notification: shows in OS tray when app is background/terminated
-		if err := s.messenger.SendMulticast(ctx, tokenStrings, text.Title, text.Body, data); err != nil {
+		if err := s.messenger.SendMulticast(ctx, tokens, text.Title, text.Body, data); err != nil {
 			log.Printf("SendSyncComplete: notification send failed for user %d: %v", userID, err)
 		}
-	} else if len(tokens) > 0 {
+	} else if dt != nil {
 		log.Printf("SendSyncComplete: messenger not configured, skipping FCM for user %d", userID)
 	}
 

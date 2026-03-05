@@ -18,32 +18,23 @@ func NewNotificationRepository(db *DB) *NotificationRepository {
 	return &NotificationRepository{db: db}
 }
 
-// UpsertDeviceToken registers or updates a device token for a user.
-// If the token exists for a different user, it is reassigned.
+// UpsertDeviceToken registers or replaces the device token for a user.
+// Each user has at most one token; a new registration overwrites the previous one.
 func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params notification.CreateDeviceTokenParams) (*notification.DeviceToken, error) {
-	// Reassign if the token belongs to another user
-	_, err := r.db.ExecContext(ctx,
-		`UPDATE fcm_device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2 AND user_id != $1`,
-		params.UserID, params.Token,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reassign device token: %w", err)
-	}
-
 	query := `
 		INSERT INTO fcm_device_tokens (user_id, token, device_type)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (token) DO UPDATE
-			SET user_id = EXCLUDED.user_id,
+		ON CONFLICT (user_id) DO UPDATE
+			SET token = EXCLUDED.token,
 			    device_type = EXCLUDED.device_type,
 			    is_active = true,
-			    last_used = NOW()
-		RETURNING id, user_id, token, device_type, is_active, created_at, last_used
+			    updated_at = NOW()
+		RETURNING id, user_id, token, device_type, is_active, created_at, updated_at, last_used
 	`
 
 	var dt notification.DeviceToken
-	err = r.db.QueryRowContext(ctx, query, params.UserID, params.Token, params.DeviceType).Scan(
-		&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.LastUsed,
+	err := r.db.QueryRowContext(ctx, query, params.UserID, params.Token, params.DeviceType).Scan(
+		&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.UpdatedAt, &dt.LastUsed,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert device token: %w", err)
@@ -52,35 +43,30 @@ func (r *NotificationRepository) UpsertDeviceToken(ctx context.Context, params n
 	return &dt, nil
 }
 
-func (r *NotificationRepository) GetActiveTokensByUserID(ctx context.Context, userID int64) ([]*notification.DeviceToken, error) {
+func (r *NotificationRepository) GetActiveTokenByUserID(ctx context.Context, userID int64) (*notification.DeviceToken, error) {
 	query := `
-		SELECT id, user_id, token, device_type, is_active, created_at, last_used
+		SELECT id, user_id, token, device_type, is_active, created_at, updated_at, last_used
 		FROM fcm_device_tokens
 		WHERE user_id = $1 AND is_active = true
-		ORDER BY last_used DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, userID)
+	var dt notification.DeviceToken
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(
+		&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.UpdatedAt, &dt.LastUsed,
+	)
+	if err == sql.ErrNoRows {
+		return nil, notification.ErrDeviceTokenNotFound
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get device tokens: %w", err)
-	}
-	defer rows.Close()
-
-	var tokens []*notification.DeviceToken
-	for rows.Next() {
-		var dt notification.DeviceToken
-		if err := rows.Scan(&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.LastUsed); err != nil {
-			return nil, fmt.Errorf("failed to scan device token: %w", err)
-		}
-		tokens = append(tokens, &dt)
+		return nil, fmt.Errorf("failed to get device token: %w", err)
 	}
 
-	return tokens, rows.Err()
+	return &dt, nil
 }
 
 func (r *NotificationRepository) GetAllActiveTokens(ctx context.Context) ([]*notification.DeviceToken, error) {
 	query := `
-		SELECT id, user_id, token, device_type, is_active, created_at, last_used
+		SELECT id, user_id, token, device_type, is_active, created_at, updated_at, last_used
 		FROM fcm_device_tokens
 		WHERE is_active = true
 		ORDER BY user_id
@@ -95,7 +81,7 @@ func (r *NotificationRepository) GetAllActiveTokens(ctx context.Context) ([]*not
 	var tokens []*notification.DeviceToken
 	for rows.Next() {
 		var dt notification.DeviceToken
-		if err := rows.Scan(&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.LastUsed); err != nil {
+		if err := rows.Scan(&dt.ID, &dt.UserID, &dt.Token, &dt.DeviceType, &dt.IsActive, &dt.CreatedAt, &dt.UpdatedAt, &dt.LastUsed); err != nil {
 			return nil, fmt.Errorf("failed to scan device token: %w", err)
 		}
 		tokens = append(tokens, &dt)
@@ -111,17 +97,6 @@ func (r *NotificationRepository) DeactivateToken(ctx context.Context, token stri
 	)
 	if err != nil {
 		return fmt.Errorf("failed to deactivate token: %w", err)
-	}
-	return nil
-}
-
-func (r *NotificationRepository) ReassignToken(ctx context.Context, token string, newUserID int64) error {
-	_, err := r.db.ExecContext(ctx,
-		`UPDATE fcm_device_tokens SET user_id = $1, is_active = true, last_used = NOW() WHERE token = $2`,
-		newUserID, token,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to reassign token: %w", err)
 	}
 	return nil
 }
