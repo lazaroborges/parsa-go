@@ -5,12 +5,11 @@ import "context"
 // Repository defines the interface for notification data access.
 // Defined in the domain layer, implemented in the infrastructure layer.
 type Repository interface {
-	// Device tokens
+	// Device tokens (one token per user)
 	UpsertDeviceToken(ctx context.Context, params CreateDeviceTokenParams) (*DeviceToken, error)
-	GetActiveTokensByUserID(ctx context.Context, userID int64) ([]*DeviceToken, error)
+	GetActiveTokenByUserID(ctx context.Context, userID int64) (*DeviceToken, error)
 	GetAllActiveTokens(ctx context.Context) ([]*DeviceToken, error)
 	DeactivateToken(ctx context.Context, token string) error
-	ReassignToken(ctx context.Context, token string, newUserID int64) error
 
 	// Notification preferences
 	GetPreferences(ctx context.Context, userID int64) (*NotificationPreference, error)

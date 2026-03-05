@@ -44,6 +44,7 @@ type DeviceToken struct {
 	DeviceType string    `json:"deviceType"`
 	IsActive   bool      `json:"isActive"`
 	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`  // when token/device_type changed (not last_used)
 	LastUsed   time.Time `json:"lastUsed"`
 }
 
