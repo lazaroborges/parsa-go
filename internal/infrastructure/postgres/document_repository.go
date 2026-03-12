@@ -20,30 +20,17 @@ func (r *DocumentRepository) FindOrCreateByBusinessName(ctx context.Context, bus
 	var d models.Document
 	var number sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, type, number, business_name FROM documents WHERE LOWER(business_name) = LOWER($1)`,
-		businessName,
-	).Scan(&d.ID, &d.Type, &number, &d.BusinessName)
-
-	if err == nil {
-		if number.Valid {
-			d.Number = &number.String
-		}
-		return &d, nil
-	}
-	if err != sql.ErrNoRows {
-		return nil, fmt.Errorf("failed to find document: %w", err)
-	}
-
-	err = r.db.QueryRowContext(ctx,
-		`INSERT INTO documents (type, business_name) VALUES ($1, $2) RETURNING id, type, number, business_name`,
+		`INSERT INTO documents (type, business_name) VALUES ($1, $2)
+		ON CONFLICT (LOWER(business_name)) WHERE business_name IS NOT NULL
+		DO UPDATE SET business_name = documents.business_name
+		RETURNING id, type, number, business_name`,
 		models.DocumentTypeCNPJ, businessName,
 	).Scan(&d.ID, &d.Type, &number, &d.BusinessName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create document: %w", err)
+		return nil, fmt.Errorf("failed to find or create document: %w", err)
 	}
 	if number.Valid {
 		d.Number = &number.String
 	}
-
 	return &d, nil
 }
