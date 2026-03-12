@@ -18,6 +18,8 @@ DROP INDEX IF EXISTS public.idx_documents_business_name_lower;
 DROP INDEX IF EXISTS public.idx_documents_number_unique;
 
 -- Delete documents created from business_name only (no number) before restoring NOT NULL
+-- WARNING: This DELETE is irreversible and will permanently remove documents
+-- that were created with only business_name (no number value).
 DELETE FROM public.documents WHERE number IS NULL;
 
 ALTER TABLE public.documents DROP COLUMN IF EXISTS business_name;
