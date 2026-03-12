@@ -6,10 +6,12 @@ on:
 
 jobs:
   claude-review:
-    # Only run when someone comments "/review" on a PR (not on issues)
+    # Only run when a trusted commenter posts "/review" on a PR (not on issues)
     if: |
       github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '/review')
+      contains(github.event.comment.body, '/review') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,7 +23,7 @@ jobs:
       - name: Get PR head SHA
         id: pr
         run: |
-          PR_SHA=$(gh pr view ${{ github.event.issue.number }} --json headRefOid -q .headRefOid)
+          PR_SHA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefOid -q .headRefOid)
           echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
