@@ -25,6 +25,8 @@ type Transaction struct {
 	Manipulated         bool      `json:"manipulated"`
 	Notes               *string   `json:"notes,omitempty"`
 	Cousin              *int64    `json:"cousin,omitempty"`
+	MerchantID          *int64    `json:"merchantId,omitempty"`
+	DocumentID          *int64    `json:"documentId,omitempty"`
 }
 
 type CreateTransactionParams struct {
@@ -63,4 +65,6 @@ type UpsertTransactionParams struct {
 	Status             string
 	ProviderCreatedAt  *time.Time
 	ProviderUpdatedAt  *time.Time
+	MerchantID         *int64
+	DocumentID         *int64
 }

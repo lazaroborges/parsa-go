@@ -35,6 +35,8 @@ type TransactionSyncService struct {
 	transactionRepo       transaction.Repository
 	creditCardDataRepo    models.CreditCardDataRepository
 	bankRepo              models.BankRepository
+	merchantRepo          models.MerchantRepository
+	documentRepo          models.DocumentRepository
 	duplicateCheckService *transaction.DuplicateCheckService
 	fullHistoryStartDate  string
 }
@@ -48,6 +50,8 @@ func NewTransactionSyncService(
 	transactionRepo transaction.Repository,
 	creditCardDataRepo models.CreditCardDataRepository,
 	bankRepo models.BankRepository,
+	merchantRepo models.MerchantRepository,
+	documentRepo models.DocumentRepository,
 	fullHistoryStartDate string,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
@@ -58,6 +62,8 @@ func NewTransactionSyncService(
 		transactionRepo:       transactionRepo,
 		creditCardDataRepo:    creditCardDataRepo,
 		bankRepo:              bankRepo,
+		merchantRepo:          merchantRepo,
+		documentRepo:          documentRepo,
 		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 		fullHistoryStartDate:  fullHistoryStartDate,
 	}
@@ -222,6 +228,31 @@ func (s *TransactionSyncService) processTransaction(
 	// Get the provider category key (8-digit code) for storage
 	providerCategoryKey := transaction.GetCategoryKey(apiTx.Category)
 
+	// Resolve merchant (credit card transactions)
+	var merchantID *int64
+	if apiTx.Merchant != nil && apiTx.Merchant.Name != nil && *apiTx.Merchant.Name != "" {
+		merchant, err := s.merchantRepo.FindOrCreateByName(ctx, *apiTx.Merchant.Name)
+		if err != nil {
+			log.Printf("Warning: failed to find/create merchant '%s': %v", *apiTx.Merchant.Name, err)
+		} else {
+			merchantID = &merchant.ID
+		}
+	}
+
+	// Resolve document (transfer transactions via payment_data)
+	var documentID *int64
+	if apiTx.PaymentData != nil {
+		businessName := extractPaymentBusinessName(apiTx.PaymentData, apiTx.Type)
+		if businessName != "" {
+			doc, err := s.documentRepo.FindOrCreateByBusinessName(ctx, businessName)
+			if err != nil {
+				log.Printf("Warning: failed to find/create document for '%s': %v", businessName, err)
+			} else {
+				documentID = &doc.ID
+			}
+		}
+	}
+
 	// Prepare upsert params
 	upsertParams := transaction.UpsertTransactionParams{
 		ID:                 apiTx.ID,
@@ -233,6 +264,8 @@ func (s *TransactionSyncService) processTransaction(
 		TransactionDate:    *txDate,
 		Type:               apiTx.Type,
 		Status:             apiTx.Status,
+		MerchantID:         merchantID,
+		DocumentID:         documentID,
 	}
 
 	// Upsert transaction
@@ -308,6 +341,25 @@ func (s *TransactionSyncService) processCreditCardData(
 	}
 
 	return nil
+}
+
+// extractPaymentBusinessName returns the relevant business name from payment data.
+// For DEBIT transactions the counterparty is the receiver; for CREDIT it's the payer.
+func extractPaymentBusinessName(pd *ofclient.TransactionPaymentData, txType string) string {
+	if txType == "DEBIT" && pd.Receiver != nil && pd.Receiver.Name != nil && *pd.Receiver.Name != "" {
+		return *pd.Receiver.Name
+	}
+	if txType == "CREDIT" && pd.Payer != nil && pd.Payer.Name != nil && *pd.Payer.Name != "" {
+		return *pd.Payer.Name
+	}
+	// Fallback: try whichever side has a name
+	if pd.Receiver != nil && pd.Receiver.Name != nil && *pd.Receiver.Name != "" {
+		return *pd.Receiver.Name
+	}
+	if pd.Payer != nil && pd.Payer.Name != nil && *pd.Payer.Name != "" {
+		return *pd.Payer.Name
+	}
+	return ""
 }
 
 // SyncAllUsersTransactions syncs transactions for all users with provider keys.

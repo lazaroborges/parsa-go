@@ -106,9 +106,13 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	}
 	notificationService := notification.NewService(notificationRepo, messenger)
 
+	// Initialize merchant and document repositories
+	merchantRepo := postgres.NewMerchantRepository(db)
+	documentRepo := postgres.NewDocumentRepository(db)
+
 	// Initialize sync services (account sync needs notification service for provider_key_cleared)
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo, notificationService, msgs)
-	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, cfg.OpenFinance.TransactionSyncStartDate)
+	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, merchantRepo, documentRepo, cfg.OpenFinance.TransactionSyncStartDate)
 	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
 	// Initialize auth components

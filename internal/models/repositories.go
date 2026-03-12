@@ -19,3 +19,13 @@ type BankRepository interface {
 type CreditCardDataRepository interface {
 	Upsert(ctx context.Context, transactionID string, params CreateCreditCardDataParams) (*CreditCardData, error)
 }
+
+// MerchantRepository defines data access for Merchants
+type MerchantRepository interface {
+	FindOrCreateByName(ctx context.Context, name string) (*Merchant, error)
+}
+
+// DocumentRepository defines data access for Documents
+type DocumentRepository interface {
+	FindOrCreateByBusinessName(ctx context.Context, businessName string) (*Document, error)
+}

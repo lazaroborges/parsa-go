@@ -125,6 +125,24 @@ type TransactionResponse struct {
 	Timestamp string        `json:"timestamp"`
 }
 
+// TransactionMerchant represents merchant data from the provider API (credit card transactions)
+type TransactionMerchant struct {
+	Name     *string `json:"name"`
+	Category *string `json:"category"`
+}
+
+// TransactionPaymentParty represents a payer or receiver in payment data
+type TransactionPaymentParty struct {
+	Name     *string `json:"name"`
+	Document *string `json:"document"`
+}
+
+// TransactionPaymentData represents payment data from the provider API (transfer transactions)
+type TransactionPaymentData struct {
+	Payer    *TransactionPaymentParty `json:"payer"`
+	Receiver *TransactionPaymentParty `json:"receiver"`
+}
+
 // Transaction represents a transaction from the Open Finance API
 type Transaction struct {
 	ID             string                 `json:"id"`
@@ -136,6 +154,8 @@ type Transaction struct {
 	Type           string                 `json:"type"`   // "DEBIT" or "CREDIT"
 	Status         string                 `json:"status"` // "PENDING" or "POSTED"
 	CreditCardData *TransactionCreditData `json:"credit_card_data,omitempty"`
+	Merchant       *TransactionMerchant   `json:"merchant,omitempty"`
+	PaymentData    *TransactionPaymentData `json:"payment_data,omitempty"`
 	AccountName    string                 `json:"account_name"`
 	AccountType    string                 `json:"account_type"`
 	AccountSubtype string                 `json:"account_subtype"`
