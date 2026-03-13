@@ -112,6 +112,28 @@ func (m *MockBankRepo) FindOrCreateByName(ctx context.Context, name string) (*mo
 	return nil, nil
 }
 
+type MockMerchantRepo struct {
+	FindOrCreateByNameFunc func(ctx context.Context, name string) (*models.Merchant, error)
+}
+
+func (m *MockMerchantRepo) FindOrCreateByName(ctx context.Context, name string) (*models.Merchant, error) {
+	if m.FindOrCreateByNameFunc != nil {
+		return m.FindOrCreateByNameFunc(ctx, name)
+	}
+	return &models.Merchant{ID: 1, Name: name}, nil
+}
+
+type MockDocumentRepo struct {
+	FindOrCreateByBusinessNameFunc func(ctx context.Context, businessName string) (*models.Document, error)
+}
+
+func (m *MockDocumentRepo) FindOrCreateByBusinessName(ctx context.Context, businessName string) (*models.Document, error) {
+	if m.FindOrCreateByBusinessNameFunc != nil {
+		return m.FindOrCreateByBusinessNameFunc(ctx, businessName)
+	}
+	return &models.Document{ID: 1, Type: models.DocumentTypeCNPJ, BusinessName: &businessName}, nil
+}
+
 func TestSyncUserTransactions(t *testing.T) {
 	ctx := context.Background()
 
@@ -253,7 +275,9 @@ func TestSyncUserTransactions(t *testing.T) {
 				tt.mockTxRepo(),
 				tt.mockCC(),
 				tt.mockBank(),
-				"2023-01-01", // Default test start date
+				&MockMerchantRepo{},
+				&MockDocumentRepo{},
+				"2023-01-01",
 			)
 
 			got, err := svc.SyncUserTransactions(ctx, tt.userID, false)

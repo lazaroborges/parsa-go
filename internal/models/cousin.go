@@ -11,18 +11,21 @@ package models
 type Cousin struct {
 	ID           int64  `json:"id"`
 	Document     int64  `json:"documentId"`
+	MerchantID   *int64 `json:"merchantId,omitempty"`
 	BusinessName string `json:"businessName"`
 	Name         string `json:"name"`
 }
 
 type CreateCousinParams struct {
 	DocumentID   int64
+	MerchantID   *int64
 	BusinessName string
 	Name         string
 }
 
 type UpdateCousinParams struct {
 	DocumentID   *int64
+	MerchantID   *int64
 	BusinessName *string
 	Name         *string
 }
