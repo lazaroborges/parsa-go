@@ -186,10 +186,16 @@ func (t *Transaction) GetDate() (*time.Time, error) {
 	if t.DateString == "" {
 		return nil, nil
 	}
-	// Format: "2025-09-28 03:00:00"
-	parsed, err := time.Parse("2006-01-02 15:04:05", t.DateString)
+	// Try ISO 8601 / RFC3339 first (API now returns "2026-03-08T00:28:35.846Z")
+	parsed, err := time.Parse(time.RFC3339Nano, t.DateString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse date '%s': %w", t.DateString, err)
+		parsed, err = time.Parse(time.RFC3339, t.DateString)
+		if err != nil {
+			parsed, err = time.Parse("2006-01-02 15:04:05", t.DateString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse date '%s': %w", t.DateString, err)
+			}
+		}
 	}
 	return &parsed, nil
 }
