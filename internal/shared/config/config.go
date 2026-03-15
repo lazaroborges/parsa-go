@@ -94,10 +94,7 @@ type FirebaseConfig struct {
 
 type TelemetryConfig struct {
 	Enabled      bool
-	ServiceName  string
-	Environment  string
 	OTLPEndpoint string
-	MetricsPort  string
 }
 
 func Load() (*Config, error) {
@@ -162,10 +159,7 @@ func Load() (*Config, error) {
 
 	// Parse telemetry configuration
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
-	otelServiceName := getEnv("OTEL_SERVICE_NAME", "parsa-api")
-	otelEnvironment := getEnv("OTEL_ENVIRONMENT", "development")
-	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
-	otelMetricsPort := getEnv("OTEL_METRICS_PORT", "9464")
+	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318")
 
 	cfg := &Config{
 		Server: ServerConfig{
@@ -225,10 +219,7 @@ func Load() (*Config, error) {
 		},
 		Telemetry: TelemetryConfig{
 			Enabled:      otelEnabled,
-			ServiceName:  otelServiceName,
-			Environment:  otelEnvironment,
 			OTLPEndpoint: otelEndpoint,
-			MetricsPort:  otelMetricsPort,
 		},
 	}
 

@@ -7,117 +7,87 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/prometheus"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 )
 
-type Config struct {
-	ServiceName  string
-	Environment  string
-	OTLPEndpoint string
-	MetricsPort  string
+var meter metric.Meter
+
+// Counters and histograms for HTTP request metrics.
+var (
+	requestCount    metric.Int64Counter
+	requestDuration metric.Float64Histogram
+)
+
+// Init sets up OTLP metrics export to Netdata.
+// Returns a shutdown function that flushes pending metrics.
+func Init(ctx context.Context, otlpEndpoint string) (func(context.Context) error, error) {
+	exporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithEndpoint(otlpEndpoint),
+		otlpmetrichttp.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OTLP metric exporter: %w", err)
+	}
+
+	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(15*time.Second))),
+	)
+	otel.SetMeterProvider(provider)
+
+	meter = provider.Meter("parsa-api")
+	if err := initMetrics(); err != nil {
+		return provider.Shutdown, err
+	}
+
+	log.Printf("Telemetry: OTLP metrics export to %s enabled", otlpEndpoint)
+	return provider.Shutdown, nil
 }
 
-// Init sets up OpenTelemetry with Prometheus metrics and OTLP trace export.
-// Returns a shutdown function that must be called on application exit.
-func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
-	var shutdownFuncs []func(context.Context) error
-
-	shutdown = func(ctx context.Context) error {
-		var errs []error
-		for _, fn := range shutdownFuncs {
-			if err := fn(ctx); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		if len(errs) > 0 {
-			return fmt.Errorf("telemetry shutdown errors: %v", errs)
-		}
-		return nil
-	}
-
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(cfg.ServiceName),
-			semconv.DeploymentEnvironmentName(cfg.Environment),
-		),
+func initMetrics() error {
+	var err error
+	requestCount, err = meter.Int64Counter("http.server.request_count",
+		metric.WithDescription("Total HTTP requests"),
 	)
 	if err != nil {
-		return shutdown, fmt.Errorf("failed to create resource: %w", err)
+		return err
 	}
-
-	// Prometheus metrics exporter (registers with default prometheus registry)
-	promExporter, err := prometheus.New()
-	if err != nil {
-		return shutdown, fmt.Errorf("failed to create prometheus exporter: %w", err)
-	}
-
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(promExporter),
+	requestDuration, err = meter.Float64Histogram("http.server.request_duration_seconds",
+		metric.WithDescription("HTTP request duration in seconds"),
 	)
-	otel.SetMeterProvider(meterProvider)
-	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
-
-	// OTLP gRPC trace exporter (for Tempo)
-	traceExporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
-		otlptracegrpc.WithInsecure(),
-	)
-	if err != nil {
-		return shutdown, fmt.Errorf("failed to create trace exporter: %w", err)
-	}
-
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithResource(res),
-		sdktrace.WithBatcher(traceExporter,
-			sdktrace.WithBatchTimeout(5*time.Second),
-		),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-	)
-	otel.SetTracerProvider(tracerProvider)
-	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
-
-	// W3C Trace Context propagation
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
-
-	metricsSrv := serveMetrics(cfg.MetricsPort)
-	shutdownFuncs = append(shutdownFuncs, metricsSrv.Shutdown)
-
-	log.Printf("OpenTelemetry initialized (metrics=:%s, traces=%s)", cfg.MetricsPort, cfg.OTLPEndpoint)
-
-	return shutdown, nil
+	return err
 }
 
-func serveMetrics(port string) *http.Server {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+// Middleware records request count and duration per method+route+status.
+func Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
 
-	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
-	go func() {
-		log.Printf("Metrics server listening on :%s/metrics", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Metrics server error: %v", err)
+		attrs := []attribute.KeyValue{
+			attribute.String("http.method", r.Method),
+			attribute.String("http.route", r.URL.Path),
+			attribute.Int("http.status_code", sw.status),
 		}
-	}()
+		requestCount.Add(r.Context(), 1, metric.WithAttributes(attrs...))
+		requestDuration.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(attrs...))
+	})
+}
 
-	return srv
+type statusWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.status = code
+		w.wroteHeader = true
+	}
+	w.ResponseWriter.WriteHeader(code)
 }
