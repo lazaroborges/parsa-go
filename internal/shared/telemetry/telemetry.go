@@ -68,9 +68,13 @@ func Middleware(next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
 
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
 		attrs := []attribute.KeyValue{
 			attribute.String("http.method", r.Method),
-			attribute.String("http.route", r.URL.Path),
+			attribute.String("http.route", route),
 			attribute.Int("http.status_code", sw.status),
 		}
 		requestCount.Add(r.Context(), 1, metric.WithAttributes(attrs...))
