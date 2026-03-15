@@ -88,9 +88,10 @@ type statusWriter struct {
 }
 
 func (w *statusWriter) WriteHeader(code int) {
-	if !w.wroteHeader {
-		w.status = code
-		w.wroteHeader = true
+	if w.wroteHeader {
+		return
 	}
+	w.status = code
+	w.wroteHeader = true
 	w.ResponseWriter.WriteHeader(code)
 }
