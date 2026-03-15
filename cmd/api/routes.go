@@ -7,6 +7,7 @@ import (
 	httphandlers "parsa/internal/interfaces/http"
 	"parsa/internal/shared/config"
 	"parsa/internal/shared/middleware"
+	"parsa/internal/shared/telemetry"
 )
 
 // SetupRoutes configures all HTTP routes and returns the final handler with middleware.
@@ -71,10 +72,9 @@ func SetupRoutes(deps *Dependencies, cfg *config.Config) http.Handler {
 		log.Println("TLS security middleware enabled (HSTS + SecureCookies)")
 	}
 
-	// Apply telemetry middleware as outermost wrapper when enabled
+	// Apply telemetry middleware when enabled
 	if cfg.Telemetry.Enabled {
-		handler = middleware.Telemetry(handler)
-		log.Println("OpenTelemetry middleware enabled")
+		handler = telemetry.Middleware(handler)
 	}
 
 	return handler

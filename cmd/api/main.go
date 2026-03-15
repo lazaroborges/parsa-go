@@ -30,19 +30,14 @@ func run() error {
 
 	// Initialize telemetry if enabled
 	if cfg.Telemetry.Enabled {
-		shutdownTelemetry, err := telemetry.Init(context.Background(), telemetry.Config{
-			ServiceName:  cfg.Telemetry.ServiceName,
-			Environment:  cfg.Telemetry.Environment,
-			OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
-			MetricsPort:  cfg.Telemetry.MetricsPort,
-		})
+		shutdown, err := telemetry.Init(context.Background(), cfg.Telemetry.OTLPEndpoint)
 		if err != nil {
 			return err
 		}
 		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := shutdownTelemetry(ctx); err != nil {
+			if err := shutdown(ctx); err != nil {
 				log.Printf("Telemetry shutdown error: %v", err)
 			}
 		}()
