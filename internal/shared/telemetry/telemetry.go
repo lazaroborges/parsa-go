@@ -26,8 +26,7 @@ var (
 // Returns a shutdown function that flushes pending metrics.
 func Init(ctx context.Context, otlpEndpoint string) (func(context.Context) error, error) {
 	exporter, err := otlpmetrichttp.New(ctx,
-		otlpmetrichttp.WithEndpoint(otlpEndpoint),
-		otlpmetrichttp.WithInsecure(),
+		otlpmetrichttp.WithEndpointURL(otlpEndpoint),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OTLP metric exporter: %w", err)
