@@ -70,7 +70,7 @@ func scanForecastTransaction(s scanner) (*forecast.ForecastTransaction, error) {
 
 const forecastColumns = `uuid, user_id, recurrency_pattern_id, type, recurrency_type,
 	forecast_amount, forecast_low, forecast_high, forecast_date, forecast_month,
-	cousin_id, cousin_name, category, description, account_id`
+	cousin_id, cousin_name, COALESCE(category, parent_category) AS category, description, account_id`
 
 func (r *ForecastRepository) GetByUUID(ctx context.Context, uuid string, userID int64) (*forecast.ForecastTransaction, error) {
 	query := fmt.Sprintf(`SELECT %s FROM forecast_transactions WHERE uuid = $1 AND user_id = $2`, forecastColumns)
