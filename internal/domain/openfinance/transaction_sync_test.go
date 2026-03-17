@@ -278,6 +278,7 @@ func TestSyncUserTransactions(t *testing.T) {
 				&MockMerchantRepo{},
 				&MockDocumentRepo{},
 				"2023-01-01",
+				7,
 			)
 
 			got, err := svc.SyncUserTransactions(ctx, tt.userID, false)

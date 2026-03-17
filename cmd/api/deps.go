@@ -113,7 +113,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 
 	// Initialize sync services (account sync needs notification service for provider_key_cleared)
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo, notificationService, msgs)
-	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, merchantRepo, documentRepo, cfg.OpenFinance.TransactionSyncStartDate)
+	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, merchantRepo, documentRepo, cfg.OpenFinance.TransactionSyncStartDate, cfg.OpenFinance.UpdateSyncDays)
 	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
 	// Initialize auth components

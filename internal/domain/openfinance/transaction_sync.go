@@ -39,6 +39,7 @@ type TransactionSyncService struct {
 	documentRepo          models.DocumentRepository
 	duplicateCheckService *transaction.DuplicateCheckService
 	fullHistoryStartDate  string
+	updateSyncDays        int
 }
 
 // NewTransactionSyncService creates a new transaction sync service
@@ -53,6 +54,7 @@ func NewTransactionSyncService(
 	merchantRepo models.MerchantRepository,
 	documentRepo models.DocumentRepository,
 	fullHistoryStartDate string,
+	updateSyncDays int,
 ) *TransactionSyncService {
 	return &TransactionSyncService{
 		client:                client,
@@ -66,12 +68,13 @@ func NewTransactionSyncService(
 		documentRepo:          documentRepo,
 		duplicateCheckService: transaction.NewDuplicateCheckService(transactionRepo),
 		fullHistoryStartDate:  fullHistoryStartDate,
+		updateSyncDays:        updateSyncDays,
 	}
 }
 
 // SyncUserTransactions syncs all transactions for a specific user.
 // If hasNewAccounts is true, fetches full history from the configured start date.
-// Otherwise, fetches only the last 7 days for incremental sync.
+// Otherwise, fetches the last N days (configured via OPENFINANCE_UPDATE_SYNC_DAYS) for incremental sync.
 func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userID int64, hasNewAccounts bool) (*TransactionSyncResult, error) {
 	result := &TransactionSyncResult{
 		UserID: userID,
@@ -94,7 +97,7 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 		startDate = s.fullHistoryStartDate
 		log.Printf("User %d: New accounts detected, fetching full transaction history from %s", userID, startDate)
 	} else {
-		startDate = time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+		startDate = time.Now().AddDate(0, 0, -s.updateSyncDays).Format("2006-01-02")
 		log.Printf("User %d: Incremental sync, fetching transactions from %s", userID, startDate)
 	}
 
@@ -363,7 +366,7 @@ func extractPaymentBusinessName(pd *ofclient.TransactionPaymentData, txType stri
 }
 
 // SyncAllUsersTransactions syncs transactions for all users with provider keys.
-// Uses incremental sync (last 7 days) for all users when called in batch.
+// Uses incremental sync for all users when called in batch.
 func (s *TransactionSyncService) SyncAllUsersTransactions(ctx context.Context) ([]*TransactionSyncResult, error) {
 	users, err := s.userRepo.ListUsersWithProviderKey(ctx)
 	if err != nil {
