@@ -86,6 +86,7 @@ type TLSConfig struct {
 
 type OpenFinanceConfig struct {
 	TransactionSyncStartDate string
+	UpdateSyncDays           int
 }
 
 type FirebaseConfig struct {
@@ -161,6 +162,17 @@ func Load() (*Config, error) {
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
 	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
 
+	// Parse OpenFinance configuration
+	updateSyncDaysStr := getEnv("OPENFINANCE_UPDATE_SYNC_DAYS", "7")
+	updateSyncDays, err := strconv.Atoi(updateSyncDaysStr)
+	if err != nil || updateSyncDays <= 0 {
+		updateSyncDays = 7
+	}
+	openFinanceConfig := OpenFinanceConfig{
+		TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
+		UpdateSyncDays:           updateSyncDays,
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port:         getEnv("PORT", "8080"),
@@ -211,9 +223,7 @@ func Load() (*Config, error) {
 			KeyPath:      tlsKeyPath,
 			RedirectHTTP: tlsRedirectHTTP,
 		},
-		OpenFinance: OpenFinanceConfig{
-			TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),
-		},
+		OpenFinance: openFinanceConfig,
 		Firebase: FirebaseConfig{
 			CredentialsFile: getEnv("FIREBASE_CREDENTIALS_FILE", ""),
 		},

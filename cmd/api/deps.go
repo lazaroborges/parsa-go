@@ -33,6 +33,7 @@ type Dependencies struct {
 	TagHandler          *httphandlers.TagHandler
 	CousinRuleHandler   *httphandlers.CousinRuleHandler
 	NotificationHandler *httphandlers.NotificationHandler
+	ForecastHandler     *httphandlers.ForecastHandler
 
 	// Auth
 	JWT           *auth.JWT
@@ -112,7 +113,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 
 	// Initialize sync services (account sync needs notification service for provider_key_cleared)
 	accountSyncService := openfinance.NewAccountSyncService(ofClient, userRepo, accountService, itemRepo, notificationService, msgs)
-	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, merchantRepo, documentRepo, cfg.OpenFinance.TransactionSyncStartDate)
+	transactionSyncService := openfinance.NewTransactionSyncService(ofClient, userRepo, accountService, accountRepo, transactionRepo, creditCardDataRepo, bankRepo, merchantRepo, documentRepo, cfg.OpenFinance.TransactionSyncStartDate, cfg.OpenFinance.UpdateSyncDays)
 	billSyncService := openfinance.NewBillSyncService(ofClient, userRepo, accountService, accountRepo, billRepo, transactionRepo)
 
 	// Initialize auth components
@@ -158,6 +159,10 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 	// Initialize transaction handler with cousin rule repo for dont_ask_again lookups
 	transactionHandler := httphandlers.NewTransactionHandler(transactionRepo, accountRepo, cousinRuleRepo)
 
+	// Initialize forecast handler
+	forecastRepo := postgres.NewForecastRepository(db)
+	forecastHandler := httphandlers.NewForecastHandler(forecastRepo)
+
 	// Initialize and start cousin notification listener
 	cousinListener := listener.NewCousinListener(cfg.Database.ConnectionString(), cousinRuleRepo, db.DB)
 	cousinListener.Start(context.Background())
@@ -171,6 +176,7 @@ func NewDependencies(cfg *config.Config) (*Dependencies, error) {
 		TagHandler:             tagHandler,
 		CousinRuleHandler:      cousinRuleHandler,
 		NotificationHandler:    notificationHandler,
+		ForecastHandler:        forecastHandler,
 		JWT:                    jwt,
 		AuthCodeStore:          authCodeStore,
 		AccountSyncService:     accountSyncService,
