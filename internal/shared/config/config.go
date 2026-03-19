@@ -163,9 +163,10 @@ func Load() (*Config, error) {
 	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
 
 	// Parse OpenFinance configuration
-	updateSyncDays, err := strconv.Atoi(getEnv("OPENFINANCE_UPDATE_SYNC_DAYS", "7"))
-	if err != nil {
-		return nil, fmt.Errorf("invalid OPENFINANCE_UPDATE_SYNC_DAYS: %w", err)
+	updateSyncDaysStr := getEnv("OPENFINANCE_UPDATE_SYNC_DAYS", "7")
+	updateSyncDays, err := strconv.Atoi(updateSyncDaysStr)
+	if err != nil || updateSyncDays <= 0 {
+		updateSyncDays = 7
 	}
 	openFinanceConfig := OpenFinanceConfig{
 		TransactionSyncStartDate: getEnv("OPENFINANCE_TRANSACTION_SYNC_START_DATE", "2023-01-01"),

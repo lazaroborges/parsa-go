@@ -18,7 +18,7 @@ type ForecastTransaction struct {
 	ForecastHigh        *float64   `json:"forecastHigh,omitempty"`
 	ForecastDate        *time.Time `json:"forecastDate,omitempty"`
 	ForecastMonth       time.Time  `json:"forecastMonth"`
-	CousinID            *int64     `json:"cousin,omitempty"`
+	CousinID            *int64     `json:"cousin,omitempty"` // mobile client expects "cousin", not "cousinId"
 	CousinName          *string    `json:"cousinName,omitempty"`
 	Category            *string    `json:"category,omitempty"`
 	Description         *string    `json:"description,omitempty"`

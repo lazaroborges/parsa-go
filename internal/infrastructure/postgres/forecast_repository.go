@@ -88,7 +88,7 @@ func (r *ForecastRepository) GetByUUID(ctx context.Context, uuid string, userID 
 
 func (r *ForecastRepository) ListByMonth(ctx context.Context, userID int64, forecastMonth time.Time) ([]*forecast.ForecastTransaction, error) {
 	query := fmt.Sprintf(`SELECT %s FROM forecast_transactions
-		WHERE user_id = $1 AND forecast_month = $2
+		WHERE user_id = $1 AND forecast_month = $2::date
 		ORDER BY forecast_amount DESC`, forecastColumns)
 
 	rows, err := r.db.QueryContext(ctx, query, userID, forecastMonth)
