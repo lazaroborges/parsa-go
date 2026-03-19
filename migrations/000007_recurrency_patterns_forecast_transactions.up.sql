@@ -133,7 +133,14 @@ ALTER TABLE public.transactions
 CREATE INDEX idx_transactions_recurrency_type ON public.transactions USING btree (recurrency_type) WHERE (recurrency_type IS NOT NULL);
 CREATE INDEX idx_transactions_recurrency_pattern_id ON public.transactions USING btree (recurrency_pattern_id) WHERE (recurrency_pattern_id IS NOT NULL);
 
--- 4. Drop installment constraints from credit_card_data
+-- 4. Clean up cousin names: replace underscores with spaces
+UPDATE cousins
+  SET name = REPLACE(name, '_', ' '),
+      business_name = REPLACE(business_name, '_', ' ')
+  WHERE name LIKE '%\_%' ESCAPE '\'
+     OR business_name LIKE '%\_%' ESCAPE '\';
+
+-- 5. Drop installment constraints from credit_card_data
 ALTER TABLE public.credit_card_data DROP CONSTRAINT IF EXISTS check_installment_number;
 ALTER TABLE public.credit_card_data DROP CONSTRAINT IF EXISTS check_total_installments;
 ALTER TABLE public.credit_card_data DROP CONSTRAINT IF EXISTS check_installment_range;
