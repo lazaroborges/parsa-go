@@ -86,6 +86,33 @@ func (r *ForecastRepository) GetByUUID(ctx context.Context, uuid string, userID 
 	return f, nil
 }
 
+func (r *ForecastRepository) ListByUserID(ctx context.Context, userID int64) ([]*forecast.ForecastTransaction, error) {
+	query := fmt.Sprintf(`SELECT %s FROM forecast_transactions
+		WHERE user_id = $1
+		ORDER BY forecast_amount DESC`, forecastColumns)
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list forecasts: %w", err)
+	}
+	defer rows.Close()
+
+	var forecasts []*forecast.ForecastTransaction
+	for rows.Next() {
+		f, err := scanForecastTransaction(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan forecast: %w", err)
+		}
+		forecasts = append(forecasts, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating forecasts: %w", err)
+	}
+
+	return forecasts, nil
+}
+
 func (r *ForecastRepository) ListByMonth(ctx context.Context, userID int64, forecastMonth time.Time) ([]*forecast.ForecastTransaction, error) {
 	query := fmt.Sprintf(`SELECT %s FROM forecast_transactions
 		WHERE user_id = $1 AND forecast_month = $2::date
