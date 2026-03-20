@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
 
 	"parsa/internal/domain/forecast"
 	"parsa/internal/shared/middleware"
@@ -49,19 +48,7 @@ func (h *ForecastHandler) handleListForecasts(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	monthStr := r.URL.Query().Get("forecast_month")
-	if monthStr == "" {
-		http.Error(w, "forecast_month query parameter is required (format: YYYY-MM)", http.StatusBadRequest)
-		return
-	}
-
-	forecastMonth, err := time.Parse("2006-01", monthStr)
-	if err != nil {
-		http.Error(w, "Invalid forecast_month format (use YYYY-MM)", http.StatusBadRequest)
-		return
-	}
-
-	forecasts, err := h.forecastRepo.ListByMonth(r.Context(), userID, forecastMonth)
+	forecasts, err := h.forecastRepo.ListByUserID(r.Context(), userID)
 	if err != nil {
 		log.Printf("Error listing forecasts for user %d: %v", userID, err)
 		http.Error(w, "Failed to list forecasts", http.StatusInternalServerError)
@@ -74,10 +61,12 @@ func (h *ForecastHandler) handleListForecasts(w http.ResponseWriter, r *http.Req
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ForecastListResponse{
+	if err := json.NewEncoder(w).Encode(ForecastListResponse{
 		Count:   len(results),
 		Results: results,
-	})
+	}); err != nil {
+		log.Printf("Error encoding forecast list response for user %d: %v", userID, err)
+	}
 }
 
 func (h *ForecastHandler) handleGetForecast(w http.ResponseWriter, r *http.Request) {
@@ -105,5 +94,7 @@ func (h *ForecastHandler) handleGetForecast(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(f)
+	if err := json.NewEncoder(w).Encode(f); err != nil {
+		log.Printf("Error encoding forecast response for user %d: %v", userID, err)
+	}
 }
