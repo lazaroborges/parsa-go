@@ -1,17 +1,18 @@
 package telemetry
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
+	promclient "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var meter metric.Meter
@@ -22,39 +23,54 @@ var (
 	requestDuration metric.Float64Histogram
 )
 
-// Init sets up OTLP metrics export to Netdata.
+// MetricsHandler returns an http.Handler that serves Prometheus metrics at /metrics.
+var MetricsHandler http.Handler
+
+// Init sets up Prometheus metrics export.
 // Returns a shutdown function that flushes pending metrics.
-func Init(ctx context.Context, otlpEndpoint string) (func(context.Context) error, error) {
-	exporter, err := otlpmetrichttp.New(ctx,
-		otlpmetrichttp.WithEndpointURL(otlpEndpoint),
-	)
+func Init(metricsPort string) (func(), error) {
+	registry := promclient.NewRegistry()
+
+	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OTLP metric exporter: %w", err)
+		return nil, err
 	}
 
-	provider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(15*time.Second))),
-	)
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
 	otel.SetMeterProvider(provider)
 
 	meter = provider.Meter("parsa-api")
 	if err := initMetrics(); err != nil {
-		return provider.Shutdown, err
+		return nil, err
 	}
 
-	log.Printf("Telemetry: OTLP metrics export to %s enabled", otlpEndpoint)
-	return provider.Shutdown, nil
+	MetricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+
+	// Start a dedicated metrics server so /metrics isn't behind auth
+	go func() {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", MetricsHandler)
+		log.Printf("Telemetry: Prometheus metrics server on :%s/metrics", metricsPort)
+		if err := http.ListenAndServe(":"+metricsPort, metricsMux); err != nil {
+			log.Printf("Metrics server error: %v", err)
+		}
+	}()
+
+	shutdown := func() {
+		provider.Shutdown(nil)
+	}
+	return shutdown, nil
 }
 
 func initMetrics() error {
 	var err error
-	requestCount, err = meter.Int64Counter("http.server.request_count",
+	requestCount, err = meter.Int64Counter("http_server_request_count",
 		metric.WithDescription("Total HTTP requests"),
 	)
 	if err != nil {
 		return err
 	}
-	requestDuration, err = meter.Float64Histogram("http.server.request_duration_seconds",
+	requestDuration, err = meter.Float64Histogram("http_server_request_duration_seconds",
 		metric.WithDescription("HTTP request duration in seconds"),
 	)
 	return err
@@ -72,9 +88,9 @@ func Middleware(next http.Handler) http.Handler {
 			route = "unmatched"
 		}
 		attrs := []attribute.KeyValue{
-			attribute.String("http.method", r.Method),
-			attribute.String("http.route", route),
-			attribute.Int("http.status_code", sw.status),
+			attribute.String("http_method", r.Method),
+			attribute.String("http_route", route),
+			attribute.Int("http_status_code", sw.status),
 		}
 		requestCount.Add(r.Context(), 1, metric.WithAttributes(attrs...))
 		requestDuration.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(attrs...))

@@ -94,8 +94,8 @@ type FirebaseConfig struct {
 }
 
 type TelemetryConfig struct {
-	Enabled      bool
-	OTLPEndpoint string
+	Enabled     bool
+	MetricsPort string
 }
 
 func Load() (*Config, error) {
@@ -160,7 +160,7 @@ func Load() (*Config, error) {
 
 	// Parse telemetry configuration
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
-	otelEndpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+	metricsPort := getEnv("METRICS_PORT", "9090")
 
 	// Parse OpenFinance configuration
 	updateSyncDaysStr := getEnv("OPENFINANCE_UPDATE_SYNC_DAYS", "7")
@@ -228,8 +228,8 @@ func Load() (*Config, error) {
 			CredentialsFile: getEnv("FIREBASE_CREDENTIALS_FILE", ""),
 		},
 		Telemetry: TelemetryConfig{
-			Enabled:      otelEnabled,
-			OTLPEndpoint: otelEndpoint,
+			Enabled:     otelEnabled,
+			MetricsPort: metricsPort,
 		},
 	}
 
