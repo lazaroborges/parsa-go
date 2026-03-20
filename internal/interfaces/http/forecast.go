@@ -61,10 +61,12 @@ func (h *ForecastHandler) handleListForecasts(w http.ResponseWriter, r *http.Req
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ForecastListResponse{
+	if err := json.NewEncoder(w).Encode(ForecastListResponse{
 		Count:   len(results),
 		Results: results,
-	})
+	}); err != nil {
+		log.Printf("Error encoding forecast list response for user %d: %v", userID, err)
+	}
 }
 
 func (h *ForecastHandler) handleGetForecast(w http.ResponseWriter, r *http.Request) {
@@ -92,5 +94,7 @@ func (h *ForecastHandler) handleGetForecast(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(f)
+	if err := json.NewEncoder(w).Encode(f); err != nil {
+		log.Printf("Error encoding forecast response for user %d: %v", userID, err)
+	}
 }
