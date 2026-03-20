@@ -2,20 +2,23 @@
 set -e # Stop on error
 
 # --- Config ---
-export PROJECT_DIR="/opt/parsa-go"
-[ -f /opt/parsa-go/.env ] && set -a && source /opt/parsa-go/.env && set +a
+export PROJECT_DIR="${PROJECT_DIR:-/opt/parsa-go}"
+[ -f "$PROJECT_DIR/.env" ] && set -a && source "$PROJECT_DIR/.env" && set +a
 
 export BACKUP_DIR="/var/backups/parsa-snapshots"
 export MG_BUCKET="${MG_BUCKET:-parsa-backup}"
-export DATE=$(date +%Y-%m-%d_%H%M%S)
+DATE=$(date +%Y-%m-%d_%H%M%S)
+export DATE
 export ARCHIVE_NAME="parsa_backup_$DATE.tar.gz"
-# Dump staging: /var/backups often not writable for non-root; /tmp always is
-export DUMP_PATH="${TMPDIR:-/tmp}/parsa_dump_${DATE}.sql"
+# Dump staging: use mktemp to avoid symlink attacks in /tmp
+DUMP_PATH="$(mktemp "${TMPDIR:-/tmp}/parsa_dump_${DATE}_XXXXXX.sql")"
+export DUMP_PATH
+trap 'rm -f "$DUMP_PATH"' EXIT
 
 # --- 1. Environment Check ---
 # DB_* required; for upload set MGC_API_KEY in .env (systemd runs as root, not your login mgc profile)
-if [ -z "$DB_PASSWORD" ] || [ -z "$MG_BUCKET" ]; then
-    echo "ERROR: Missing environment variables (DB_PASSWORD or MG_BUCKET)."
+if [ -z "${DB_USER:-}" ] || [ -z "${DB_NAME:-}" ] || [ -z "${DB_PASSWORD:-}" ] || [ -z "${MG_BUCKET:-}" ]; then
+    echo "ERROR: Missing environment variables (DB_USER, DB_NAME, DB_PASSWORD, or MG_BUCKET)."
     exit 1
 fi
 
@@ -32,10 +35,8 @@ tar -czf "$BACKUP_DIR/$ARCHIVE_NAME" \
     --exclude='*.log' \
     --exclude='.git' \
     --exclude='tmp' \
-    -C /opt parsa-go \
+    -C "$(dirname "$PROJECT_DIR")" "$(basename "$PROJECT_DIR")" \
     -C "$(dirname "$DUMP_PATH")" "$(basename "$DUMP_PATH")"
-
-rm -f "$DUMP_PATH"
 
 # --- 3. Upload to Magalu (Using mgc-cli) ---
 echo "3. Uploading to Magalu Bucket: $MG_BUCKET..."
