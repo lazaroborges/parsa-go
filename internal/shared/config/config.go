@@ -95,7 +95,7 @@ type FirebaseConfig struct {
 
 type TelemetryConfig struct {
 	Enabled     bool
-	MetricsPort string
+	MetricsAddr string
 }
 
 func Load() (*Config, error) {
@@ -160,7 +160,7 @@ func Load() (*Config, error) {
 
 	// Parse telemetry configuration
 	otelEnabled := getBoolEnv("OTEL_ENABLED", false)
-	metricsPort := getEnv("METRICS_PORT", "9090")
+	metricsAddr := getEnv("METRICS_ADDR", ":9090")
 
 	// Parse OpenFinance configuration
 	updateSyncDaysStr := getEnv("OPENFINANCE_UPDATE_SYNC_DAYS", "7")
@@ -229,7 +229,7 @@ func Load() (*Config, error) {
 		},
 		Telemetry: TelemetryConfig{
 			Enabled:     otelEnabled,
-			MetricsPort: metricsPort,
+			MetricsAddr: metricsAddr,
 		},
 	}
 

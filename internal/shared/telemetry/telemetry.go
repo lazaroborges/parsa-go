@@ -1,7 +1,10 @@
 package telemetry
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
@@ -23,12 +26,12 @@ var (
 	requestDuration metric.Float64Histogram
 )
 
-// MetricsHandler returns an http.Handler that serves Prometheus metrics at /metrics.
-var MetricsHandler http.Handler
+// metricsHandler holds the Prometheus HTTP handler for the /metrics endpoint.
+var metricsHandler http.Handler
 
 // Init sets up Prometheus metrics export.
 // Returns a shutdown function that flushes pending metrics.
-func Init(metricsPort string) (func(), error) {
+func Init(metricsAddr string) (func(), error) {
 	registry := promclient.NewRegistry()
 
 	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
@@ -44,20 +47,33 @@ func Init(metricsPort string) (func(), error) {
 		return nil, err
 	}
 
-	MetricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	metricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 
-	// Start a dedicated metrics server so /metrics isn't behind auth
+	// Start a dedicated metrics server so /metrics isn't behind auth.
+	// Bind synchronously so startup fails fast on port conflicts.
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metricsHandler)
+	ln, err := net.Listen("tcp", metricsAddr)
+	if err != nil {
+		return nil, fmt.Errorf("metrics listener on %s: %w", metricsAddr, err)
+	}
+	metricsSrv := &http.Server{Handler: metricsMux}
 	go func() {
-		metricsMux := http.NewServeMux()
-		metricsMux.Handle("/metrics", MetricsHandler)
-		log.Printf("Telemetry: Prometheus metrics server on :%s/metrics", metricsPort)
-		if err := http.ListenAndServe(":"+metricsPort, metricsMux); err != nil {
+		log.Printf("Telemetry: Prometheus metrics server on %s/metrics", metricsAddr)
+		if err := metricsSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("Metrics server error: %v", err)
 		}
 	}()
 
 	shutdown := func() {
-		provider.Shutdown(nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := metricsSrv.Shutdown(ctx); err != nil {
+			log.Printf("Metrics server shutdown error: %v", err)
+		}
+		if err := provider.Shutdown(ctx); err != nil {
+			log.Printf("Metrics provider shutdown error: %v", err)
+		}
 	}
 	return shutdown, nil
 }

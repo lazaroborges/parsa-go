@@ -30,7 +30,7 @@ func run() error {
 
 	// Initialize telemetry if enabled
 	if cfg.Telemetry.Enabled {
-		shutdown, err := telemetry.Init(cfg.Telemetry.MetricsPort)
+		shutdown, err := telemetry.Init(cfg.Telemetry.MetricsAddr)
 		if err != nil {
 			return err
 		}
