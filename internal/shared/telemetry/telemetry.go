@@ -40,11 +40,22 @@ func Init(metricsAddr string) (func(), error) {
 	}
 
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	prevProvider := otel.GetMeterProvider()
 	otel.SetMeterProvider(provider)
+
+	rollback := func(initErr error) (func(), error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := provider.Shutdown(ctx); err != nil {
+			log.Printf("Metrics provider cleanup error: %v", err)
+		}
+		otel.SetMeterProvider(prevProvider)
+		return nil, initErr
+	}
 
 	meter = provider.Meter("parsa-api")
 	if err := initMetrics(); err != nil {
-		return nil, err
+		return rollback(err)
 	}
 
 	metricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
@@ -55,7 +66,7 @@ func Init(metricsAddr string) (func(), error) {
 	metricsMux.Handle("/metrics", metricsHandler)
 	ln, err := net.Listen("tcp", metricsAddr)
 	if err != nil {
-		return nil, fmt.Errorf("metrics listener on %s: %w", metricsAddr, err)
+		return rollback(fmt.Errorf("metrics listener on %s: %w", metricsAddr, err))
 	}
 	metricsSrv := &http.Server{
 		Handler:           metricsMux,
