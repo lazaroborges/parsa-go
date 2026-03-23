@@ -57,7 +57,11 @@ func Init(metricsAddr string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("metrics listener on %s: %w", metricsAddr, err)
 	}
-	metricsSrv := &http.Server{Handler: metricsMux}
+	metricsSrv := &http.Server{
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		log.Printf("Telemetry: Prometheus metrics server on %s/metrics", metricsAddr)
 		if err := metricsSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
