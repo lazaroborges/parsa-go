@@ -30,17 +30,11 @@ func run() error {
 
 	// Initialize telemetry if enabled
 	if cfg.Telemetry.Enabled {
-		shutdown, err := telemetry.Init(context.Background(), cfg.Telemetry.OTLPEndpoint)
+		shutdown, err := telemetry.Init(cfg.Telemetry.MetricsAddr)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := shutdown(ctx); err != nil {
-				log.Printf("Telemetry shutdown error: %v", err)
-			}
-		}()
+		defer shutdown()
 	}
 
 	// Initialize dependencies
