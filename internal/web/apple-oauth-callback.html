@@ -45,7 +45,6 @@
     </div>
 
     <script>
-        var token = {{.TokenJSON}};
         var authCode = {{.CodeJSON}};
         var error = {{.ErrorJSON}};
         var scheme = {{.SchemeJSON}};
@@ -67,14 +66,6 @@
             setTimeout(function() {
                 document.getElementById('submessage').innerHTML =
                     'If you are not redirected, <a href="' + codeRedirect + '" style="color: #4dabf7;">click here</a>';
-            }, 2000);
-        } else if (token) {
-            var successRedirect = deepLinkBase + '?token=' + encodeURIComponent(token);
-            window.location.href = successRedirect;
-            setTimeout(function() { window.location.href = successRedirect; }, 500);
-            setTimeout(function() {
-                document.getElementById('submessage').innerHTML =
-                    'If you are not redirected, <a href="' + successRedirect + '" style="color: #4dabf7;">click here</a>';
             }, 2000);
         } else {
             document.getElementById('message').textContent = 'Invalid Response';
