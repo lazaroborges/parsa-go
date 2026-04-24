@@ -146,6 +146,7 @@ type TransactionPaymentData struct {
 // Transaction represents a transaction from the Open Finance API
 type Transaction struct {
 	ID             string                 `json:"id"`
+	AccountID      string                 `json:"account_id"`
 	Description    string                 `json:"description"`
 	Category       *string                `json:"category"`
 	CurrencyCode   string                 `json:"currency_code"`
