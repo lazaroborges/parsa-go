@@ -110,9 +110,11 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 	result.TransactionsFound = len(txResp.Data)
 	log.Printf("Fetched %d transactions for user %d", result.TransactionsFound, userID)
 
-	// Build a cache of accounts for matching
-	// Key: "name|account_type|subtype" -> account
+	// Build caches of accounts for matching
+	// Primary key: account ID (provider UUID, same as accounts.id)
+	// Fallback key: "name|account_type|subtype"
 	accountCache := make(map[string]*account.Account)
+	accountIDMap := make(map[string]*account.Account)
 	accounts, err := s.accountService.ListAccountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
@@ -120,6 +122,7 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 	for i := range accounts {
 		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
 		accountCache[key] = accounts[i]
+		accountIDMap[accounts[i].ID] = accounts[i]
 	}
 
 	// Collect newly created transactions for duplicate checking
@@ -127,7 +130,7 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 
 	// Process each transaction
 	for _, apiTx := range txResp.Data {
-		txn, wasCreated, err := s.processTransaction(ctx, userID, &apiTx, accountCache, result)
+		txn, wasCreated, err := s.processTransaction(ctx, userID, &apiTx, accountCache, accountIDMap, result)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to process transaction %s: %v", apiTx.ID, err)
 			result.Errors = append(result.Errors, errMsg)
@@ -164,27 +167,42 @@ func (s *TransactionSyncService) processTransaction(
 	userID int64,
 	apiTx *ofclient.Transaction,
 	accountCache map[string]*account.Account,
+	accountIDMap map[string]*account.Account,
 	result *TransactionSyncResult,
 ) (*transaction.Transaction, bool, error) {
-	// Match transaction to account using: account_name -> name, account_type -> account_type, account_subtype -> subtype
+	// Prefer direct account_id match (provider UUID == accounts.id).
+	// Fall back to name|account_type|subtype triple, then to DB lookup.
 	matchKey := fmt.Sprintf("%s|%s|%s", apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
-	account, found := accountCache[matchKey]
 
-	if !found {
-		// Try to find in database (in case cache is stale)
+	var account *account.Account
+	if apiTx.AccountID != "" {
+		if acc, ok := accountIDMap[apiTx.AccountID]; ok {
+			account = acc
+		}
+	}
+	if account == nil {
+		if acc, ok := accountCache[matchKey]; ok {
+			account = acc
+		}
+	}
+
+	if account == nil {
 		var err error
 		account, err = s.accountService.FindAccountByMatch(ctx, userID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to find account: %w", err)
 		}
 		if account == nil {
-			log.Printf("Skipping transaction %s: no matching account found for name=%s, type=%s, subtype=%s",
-				apiTx.ID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
+			log.Printf("Skipping transaction %s: no matching account found for id=%s, name=%s, type=%s, subtype=%s",
+				apiTx.ID, apiTx.AccountID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
 			result.Skipped++
 			return nil, false, nil
 		}
-		// Update cache
-		accountCache[matchKey] = account
+	}
+
+	accountCache[matchKey] = account
+	if account.ID != "" {
+		accountIDMap[account.ID] = account
 	}
 
 	// If account has no bank assigned and we have item_bank_name, assign it
