@@ -110,18 +110,14 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 	result.TransactionsFound = len(txResp.Data)
 	log.Printf("Fetched %d transactions for user %d", result.TransactionsFound, userID)
 
-	// Build caches of accounts for matching
-	// Primary key: account ID (provider UUID, same as accounts.id)
-	// Fallback key: "name|account_type|subtype"
-	accountCache := make(map[string]*account.Account)
+	// Build a cache of accounts keyed by their provider UUID (accounts.id).
+	// Transactions link to accounts strictly by account_id.
 	accountIDMap := make(map[string]*account.Account)
 	accounts, err := s.accountService.ListAccountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user accounts: %w", err)
 	}
 	for i := range accounts {
-		key := fmt.Sprintf("%s|%s|%s", accounts[i].Name, accounts[i].AccountType, accounts[i].Subtype)
-		accountCache[key] = accounts[i]
 		accountIDMap[accounts[i].ID] = accounts[i]
 	}
 
@@ -130,7 +126,7 @@ func (s *TransactionSyncService) SyncUserTransactions(ctx context.Context, userI
 
 	// Process each transaction
 	for _, apiTx := range txResp.Data {
-		txn, wasCreated, err := s.processTransaction(ctx, userID, &apiTx, accountCache, accountIDMap, result)
+		txn, wasCreated, err := s.processTransaction(ctx, userID, &apiTx, accountIDMap, result)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to process transaction %s: %v", apiTx.ID, err)
 			result.Errors = append(result.Errors, errMsg)
@@ -166,58 +162,49 @@ func (s *TransactionSyncService) processTransaction(
 	ctx context.Context,
 	userID int64,
 	apiTx *ofclient.Transaction,
-	accountCache map[string]*account.Account,
 	accountIDMap map[string]*account.Account,
 	result *TransactionSyncResult,
 ) (*transaction.Transaction, bool, error) {
-	// Prefer direct account_id match (provider UUID == accounts.id).
-	// Fall back to name|account_type|subtype triple, then to DB lookup.
-	matchKey := fmt.Sprintf("%s|%s|%s", apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
-
-	var account *account.Account
-	if apiTx.AccountID != "" {
-		if acc, ok := accountIDMap[apiTx.AccountID]; ok {
-			account = acc
-		}
-	}
-	if account == nil {
-		if acc, ok := accountCache[matchKey]; ok {
-			account = acc
-		}
+	// Transactions link to accounts strictly by account_id (provider UUID == accounts.id).
+	if apiTx.AccountID == "" {
+		log.Printf("Skipping transaction %s: provider returned no account_id (name=%s, type=%s, subtype=%s)",
+			apiTx.ID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
+		result.Skipped++
+		return nil, false, nil
 	}
 
-	if account == nil {
-		var err error
-		account, err = s.accountService.FindAccountByMatch(ctx, userID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
+	acc, ok := accountIDMap[apiTx.AccountID]
+	if !ok {
+		// Account may have been created after the per-sync cache was built.
+		dbAcc, err := s.accountService.GetAccountByID(ctx, apiTx.AccountID)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to find account: %w", err)
+			return nil, false, fmt.Errorf("failed to lookup account %s: %w", apiTx.AccountID, err)
 		}
-		if account == nil {
-			log.Printf("Skipping transaction %s: no matching account found for id=%s, name=%s, type=%s, subtype=%s",
-				apiTx.ID, apiTx.AccountID, apiTx.AccountName, apiTx.AccountType, apiTx.AccountSubtype)
+		// GetAccountByID bypasses ownership checks; enforce it here so a bogus
+		// provider payload cannot attach a transaction to another user's account.
+		if dbAcc == nil || dbAcc.UserID != userID {
+			log.Printf("Skipping transaction %s: no account found with id=%s for user %d",
+				apiTx.ID, apiTx.AccountID, userID)
 			result.Skipped++
 			return nil, false, nil
 		}
-	}
-
-	accountCache[matchKey] = account
-	if account.ID != "" {
-		accountIDMap[account.ID] = account
+		acc = dbAcc
+		accountIDMap[acc.ID] = acc
 	}
 
 	// If account has no bank assigned and we have item_bank_name, assign it
 	// Note: We can't verify ownership here as this is a sync operation from the provider
 	// The account already belongs to the user by virtue of being in their provider data
-	if account.BankID == 0 && apiTx.ItemBankName != "" {
+	if acc.BankID == 0 && apiTx.ItemBankName != "" {
 		bank, err := s.bankRepo.FindOrCreateByName(ctx, apiTx.ItemBankName)
 		if err != nil {
 			log.Printf("Warning: failed to find/create bank '%s': %v", apiTx.ItemBankName, err)
 		} else {
-			if err := s.accountRepo.UpdateBankID(ctx, account.ID, bank.ID); err != nil {
-				log.Printf("Warning: failed to update account %s with bank_id %d: %v", account.ID, bank.ID, err)
+			if err := s.accountRepo.UpdateBankID(ctx, acc.ID, bank.ID); err != nil {
+				log.Printf("Warning: failed to update account %s with bank_id %d: %v", acc.ID, bank.ID, err)
 			} else {
-				account.BankID = bank.ID // Update cache
-				log.Printf("Assigned bank '%s' (id=%d) to account %s", bank.Name, bank.ID, account.ID)
+				acc.BankID = bank.ID
+				log.Printf("Assigned bank '%s' (id=%d) to account %s", bank.Name, bank.ID, acc.ID)
 			}
 		}
 	}
@@ -277,7 +264,7 @@ func (s *TransactionSyncService) processTransaction(
 	// Prepare upsert params
 	upsertParams := transaction.UpsertTransactionParams{
 		ID:                 apiTx.ID,
-		AccountID:          account.ID,
+		AccountID:          acc.ID,
 		Amount:             amount,
 		Description:        apiTx.Description,
 		Category:           parsaCategory,

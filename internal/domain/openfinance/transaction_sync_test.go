@@ -170,6 +170,7 @@ func TestSyncUserTransactions(t *testing.T) {
 							Data: []ofclient.Transaction{
 								{
 									ID:             "tx-1",
+									AccountID:      "acc-1",
 									Description:    "Uber Trip",
 									AmountString:   "25.50",
 									DateString:     "2023-10-27 10:00:00",
@@ -234,8 +235,9 @@ func TestSyncUserTransactions(t *testing.T) {
 							Data: []ofclient.Transaction{
 								{
 									ID:          "tx-2",
+									AccountID:   "acc-missing",
 									Description: "Unknown",
-									AccountName: "Unknown Account", // No match
+									AccountName: "Unknown Account",
 								},
 							},
 						}, nil
@@ -245,10 +247,10 @@ func TestSyncUserTransactions(t *testing.T) {
 			mockAccRepo: func() *MockAccountRepo {
 				return &MockAccountRepo{
 					ListByUserIDFunc: func(ctx context.Context, userID int64) ([]*account.Account, error) {
-						return []*account.Account{}, nil // No accounts
+						return []*account.Account{}, nil
 					},
-					FindByMatchFunc: func(ctx context.Context, userID int64, name, accountType, subtype string) (*account.Account, error) {
-						return nil, nil // Not found in DB either
+					GetByIDFunc: func(ctx context.Context, id string) (*account.Account, error) {
+						return nil, nil
 					},
 				}
 			},
