@@ -150,7 +150,7 @@ type Transaction struct {
 	Description    string                 `json:"description"`
 	Category       *string                `json:"category"`
 	CurrencyCode   string                 `json:"currency_code"`
-	AmountString   string                 `json:"amount"` // API returns amount as string
+	AmountRaw      json.RawMessage        `json:"amount"` // API may return amount as number or string
 	DateString     string                 `json:"date"`   // "2025-09-28 03:00:00" format
 	Type           string                 `json:"type"`   // "DEBIT" or "CREDIT"
 	Status         string                 `json:"status"` // "PENDING" or "POSTED"
@@ -165,19 +165,31 @@ type Transaction struct {
 
 // TransactionCreditData represents credit card specific data for a transaction
 type TransactionCreditData struct {
-	PurchaseDateString string `json:"purchaseDate"`      // ISO 8601 format
-	InstallmentNumber  string `json:"installmentNumber"` // API returns as string
-	TotalInstallments  string `json:"totalInstallments"` // API returns as string
+	PurchaseDateString    string          `json:"purchaseDate"`      // ISO 8601 format
+	InstallmentNumberRaw  json.RawMessage `json:"installmentNumber"` // API may return as number or string
+	TotalInstallmentsRaw  json.RawMessage `json:"totalInstallments"` // API may return as number or string
 }
 
-// GetAmount returns the amount as a float64
+// GetAmount returns the amount as a float64. The provider's API alternates
+// between numeric and string encodings between releases, so we accept both.
 func (t *Transaction) GetAmount() (float64, error) {
-	if t.AmountString == "" {
+	if len(t.AmountRaw) == 0 || string(t.AmountRaw) == "null" {
 		return 0, nil
 	}
-	amount, err := strconv.ParseFloat(t.AmountString, 64)
+	var num float64
+	if err := json.Unmarshal(t.AmountRaw, &num); err == nil {
+		return num, nil
+	}
+	var s string
+	if err := json.Unmarshal(t.AmountRaw, &s); err != nil {
+		return 0, fmt.Errorf("failed to parse amount '%s': %w", string(t.AmountRaw), err)
+	}
+	if s == "" {
+		return 0, nil
+	}
+	amount, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse amount '%s': %w", t.AmountString, err)
+		return 0, fmt.Errorf("failed to parse amount '%s': %w", s, err)
 	}
 	return amount, nil
 }
@@ -218,28 +230,44 @@ func (c *TransactionCreditData) GetPurchaseDate() (*time.Time, error) {
 	return &parsed, nil
 }
 
-// GetInstallmentNumber returns the installment number as an int
+// GetInstallmentNumber returns the installment number as an int.
 func (c *TransactionCreditData) GetInstallmentNumber() (int, error) {
-	if c == nil || c.InstallmentNumber == "" {
+	if c == nil {
 		return 0, nil
 	}
-	num, err := strconv.Atoi(c.InstallmentNumber)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse installmentNumber '%s': %w", c.InstallmentNumber, err)
-	}
-	return num, nil
+	return parseRawInt(c.InstallmentNumberRaw, "installmentNumber")
 }
 
-// GetTotalInstallments returns the total installments as an int
+// GetTotalInstallments returns the total installments as an int.
 func (c *TransactionCreditData) GetTotalInstallments() (int, error) {
-	if c == nil || c.TotalInstallments == "" {
+	if c == nil {
 		return 0, nil
 	}
-	num, err := strconv.Atoi(c.TotalInstallments)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse totalInstallments '%s': %w", c.TotalInstallments, err)
+	return parseRawInt(c.TotalInstallmentsRaw, "totalInstallments")
+}
+
+// parseRawInt decodes a json.RawMessage that may be either a number or a
+// quoted string into an int. Returns 0 for null/empty without error.
+func parseRawInt(raw json.RawMessage, field string) (int, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, nil
 	}
-	return num, nil
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0, fmt.Errorf("failed to parse %s %s: %w", field, string(raw), err)
+	}
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s '%s': %w", field, s, err)
+	}
+	return n, nil
 }
 
 // BillResponse represents the API response for past due credit card bills

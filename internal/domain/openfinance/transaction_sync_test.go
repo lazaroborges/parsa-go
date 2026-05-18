@@ -2,6 +2,7 @@ package openfinance
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"parsa/internal/domain/account"
@@ -172,7 +173,7 @@ func TestSyncUserTransactions(t *testing.T) {
 									ID:             "tx-1",
 									AccountID:      "acc-1",
 									Description:    "Uber Trip",
-									AmountString:   "25.50",
+									AmountRaw:      json.RawMessage(`"25.50"`),
 									DateString:     "2023-10-27 10:00:00",
 									AccountName:    "Checking",
 									AccountType:    "BANK",
