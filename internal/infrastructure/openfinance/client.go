@@ -261,7 +261,7 @@ func parseRawInt(raw json.RawMessage, field string) (int, error) {
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return 0, fmt.Errorf("failed to parse %s %s: %w", field, string(raw), err)
+		return 0, fmt.Errorf("failed to parse %s '%s': %w", field, string(raw), err)
 	}
 	if s == "" {
 		return 0, nil
