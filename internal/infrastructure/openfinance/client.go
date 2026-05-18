@@ -173,6 +173,9 @@ type TransactionCreditData struct {
 // GetAmount returns the amount as a float64. The provider's API alternates
 // between numeric and string encodings between releases, so we accept both.
 func (t *Transaction) GetAmount() (float64, error) {
+	if t == nil {
+		return 0, nil
+	}
 	if len(t.AmountRaw) == 0 || string(t.AmountRaw) == "null" {
 		return 0, nil
 	}
